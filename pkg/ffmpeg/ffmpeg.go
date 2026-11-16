@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"wails-cast/pkg/hls"
 	"wails-cast/pkg/logger"
@@ -93,8 +94,8 @@ func buildTranscodeArgs(input *mix.FileOrBuffer, output *mix.TargetFileOrBuffer,
 	// Input file
 	args = append(args, "-i", input.ToPipe())
 
+	args = append(args, videoEncoderArgs()...)
 	args = append(args,
-		"-c:v", "h264_videotoolbox",
 		"-pix_fmt", "yuv420p",
 		"-c:a", "aac",
 		"-b:a", "96k",
@@ -140,6 +141,17 @@ func buildTranscodeArgs(input *mix.FileOrBuffer, output *mix.TargetFileOrBuffer,
 
 	// Output file
 	return append(args, output.ToPipe()), nil
+}
+
+// videoEncoderArgs picks the H.264 encoder for this platform. VideoToolbox is
+// macOS-only; elsewhere (e.g. the Linux library host) it doesn't exist and
+// every transcode would fail, so fall back to software x264, which at
+// veryfast encodes 1080p several times faster than real time.
+func videoEncoderArgs() []string {
+	if runtime.GOOS == "darwin" {
+		return []string{"-c:v", "h264_videotoolbox"}
+	}
+	return []string{"-c:v", "libx264", "-preset", "veryfast"}
 }
 
 // buildSubtitleFilter builds the subtitle filter string for ffmpeg
