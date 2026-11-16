@@ -22,6 +22,7 @@ const { showConfirmModal, confirmOptions, isConfirmLoading } = useConfirm();
 onMounted(() => {
   store.checkFFmpeg();
   store.discoverDevices();
+  store.attachToRemotePlayback();
 });
 
 const selectDevice = (device: any) => {

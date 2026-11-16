@@ -540,9 +540,7 @@ func (h *HTTPServer) handleState(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "method not allowed"})
 		return
 	}
-	h.app.mu.RLock()
-	state := h.app.playbackState
-	h.app.mu.RUnlock()
+	state := h.app.currentPlaybackState()
 	writeJSON(w, http.StatusOK, state)
 }
 
@@ -587,9 +585,7 @@ func (h *HTTPServer) handleControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.app.mu.RLock()
-	state := h.app.playbackState
-	h.app.mu.RUnlock()
+	state := h.app.currentPlaybackState()
 	writeJSON(w, http.StatusOK, playResponse{OK: true, State: state})
 }
 

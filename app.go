@@ -40,6 +40,10 @@ type App struct {
 	localIp       string
 	port          int
 	playbackState PlaybackState
+	// positionAt is when playbackState.CurrentTime was last set. The device
+	// only reports its position on status changes, so remote clients get the
+	// position extrapolated from here (see currentPlaybackState).
+	positionAt    time.Time
 	historyStore  *HistoryStore
 	settingsStore *SettingsStore
 	mu            sync.RWMutex
@@ -262,6 +266,7 @@ func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *o
 		a.mu.Lock()
 		a.playbackState.Status = "PLAYING"
 		a.playbackState.CurrentTime = 0
+		a.positionAt = time.Now()
 		state := a.playbackState
 		a.mu.Unlock()
 		a.historyStore.Add(fileNameOrUrl, name, castOptions)
@@ -314,6 +319,7 @@ func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *o
 	a.mu.Lock()
 	a.playbackState.Status = "PLAYING"
 	a.playbackState.CurrentTime = 0
+		a.positionAt = time.Now()
 	state := a.playbackState
 	a.mu.Unlock()
 	// Notify the desktop UI (and any remote clients) of the new state.
@@ -375,6 +381,7 @@ func (a *App) SeekTo(seekTime float64) error {
 
 	a.mu.Lock()
 	a.playbackState.CurrentTime = seekTime
+	a.positionAt = time.Now()
 	state := a.playbackState
 	a.mu.Unlock()
 	events.Emit("playback:state", state)
@@ -463,6 +470,8 @@ func (a *App) Pause() error {
 		}
 	}
 	a.mu.Lock()
+	a.playbackState.CurrentTime = a.extrapolatedPosition()
+	a.positionAt = time.Now()
 	a.playbackState.Status = "PAUSED"
 	state := a.playbackState
 	a.mu.Unlock()
@@ -478,6 +487,7 @@ func (a *App) Unpause() error {
 		}
 	}
 	a.mu.Lock()
+	a.positionAt = time.Now()
 	a.playbackState.Status = "PLAYING"
 	state := a.playbackState
 	a.mu.Unlock()
@@ -892,6 +902,7 @@ func (a *App) handleChromecastMessage(msg *cast_proto.CastMessage) {
 
 			a.mu.Lock()
 			a.playbackState.CurrentTime = status.CurrentTime
+			a.positionAt = time.Now()
 
 			switch status.PlayerState {
 			case "PAUSED":
@@ -914,6 +925,29 @@ func (a *App) handleChromecastMessage(msg *cast_proto.CastMessage) {
 		a.mu.Unlock()
 	}
 	events.Emit("playback:state", a.playbackState)
+}
+
+// extrapolatedPosition is the playback position now: the last reported one
+// plus the time since, while playing. Callers must hold a.mu.
+func (a *App) extrapolatedPosition() float64 {
+	pos := a.playbackState.CurrentTime
+	if a.playbackState.Status == "PLAYING" && !a.positionAt.IsZero() {
+		pos += time.Since(a.positionAt).Seconds()
+		if d := a.playbackState.Duration; d > 0 && pos > d {
+			pos = d
+		}
+	}
+	return pos
+}
+
+// currentPlaybackState returns a snapshot of the playback state with the
+// position extrapolated to now, for clients that poll it.
+func (a *App) currentPlaybackState() PlaybackState {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	state := a.playbackState
+	state.CurrentTime = a.extrapolatedPosition()
+	return state
 }
 
 // Helper functions

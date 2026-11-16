@@ -2,12 +2,17 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { Device, deviceService } from "../services/device";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
-import { ffmpeg, main, options } from "../../wailsjs/go/models";
+import { castapi, ffmpeg, main, options } from "../../wailsjs/go/models";
 import { mediaService } from "@/services/media";
 import { useSettingsStore } from "./settings";
 import { parseSubtitlePath, buildSubtitlePath } from "@/utils/subtitle";
 import { useHistoryStore } from "./history";
-import { activeSource, isRemoteActive, type Source } from "@/services/source";
+import {
+  activeSource,
+  isRemoteActive,
+  LOCAL_SOURCE,
+  type Source,
+} from "@/services/source";
 
 interface FrontendCastOptions {
   VideoTrack: number;
@@ -28,17 +33,17 @@ export const useCastStore = defineStore("cast", () => {
   const isCasting = computed(() => playbackState.value.status !== "STOPPED");
   const error = ref<string | null>(null);
   const ffmpegInfo = ref<ffmpeg.FFmpegInfo | null>(null);
-  const trackInfo = ref<main.TrackDisplayInfo | null>(null);
+  const trackInfo = ref<castapi.TrackDisplayInfo | null>(null);
   const historyStore = useHistoryStore();
 
   // Cast targets exposed by the active remote source (when playing a remote
   // item), and the chosen target host on that remote.
-  const remoteDevices = ref<main.RemoteDevice[]>([]);
+  const remoteDevices = ref<castapi.RemoteDevice[]>([]);
   const remoteTargetHost = ref<string>("local");
 
   // Local playback events only apply when playing locally; remote playback is
   // reflected by polling the remote /state (see startStatePoll).
-  EventsOn("playback:state", (state: main.PlaybackState) => {
+  EventsOn("playback:state", (state: castapi.PlaybackState) => {
     if (isRemoteActive()) return;
     playbackState.value = state;
   });
@@ -51,22 +56,81 @@ export const useCastStore = defineStore("cast", () => {
       statePoll = null;
     }
   };
+  // Last position the remote reported. Older remotes only update it when the
+  // TV sends a status change, so a repeat of the same value while playing means
+  // "no news": keep the player bar's own ticking instead of snapping back.
+  let lastRemotePosition: number | null = null;
+  const applyRemoteState = (next: castapi.PlaybackState) => {
+    const unchanged =
+      next.status === "PLAYING" &&
+      playbackState.value.status === "PLAYING" &&
+      next.mediaPath === playbackState.value.mediaPath &&
+      next.currentTime === lastRemotePosition;
+    lastRemotePosition = next.currentTime;
+    playbackState.value = unchanged
+      ? { ...next, currentTime: playbackState.value.currentTime }
+      : next;
+    // The remote cast ended: hand the controls back to this machine.
+    if (next.status === "STOPPED") {
+      stopStatePoll();
+      activeSource.value = LOCAL_SOURCE;
+    }
+  };
   const startStatePoll = () => {
     stopStatePoll();
+    lastRemotePosition = null;
     statePoll = window.setInterval(async () => {
       if (!isRemoteActive()) return;
       try {
         const { RemoteState } = await import("../../wailsjs/go/main/App");
         const s = activeSource.value;
-        playbackState.value = await RemoteState(s.base, s.token);
+        applyRemoteState(await RemoteState(s.base, s.token));
       } catch {
         /* transient */
       }
     }, 2000);
   };
 
+  // attachToRemotePlayback looks for another wails-cast instance on the LAN
+  // that is already casting and, if this machine is idle, takes over its
+  // controls (pause/seek/volume/stop route to it). Read-only until the user
+  // presses a control, so it never disturbs what is playing.
+  const attachToRemotePlayback = async () => {
+    if (playbackState.value.status !== "STOPPED") return;
+    const { DiscoverCastInstances, RemoteState } = await import(
+      "../../wailsjs/go/main/App"
+    );
+    let instances: castapi.CastInstance[] = [];
+    try {
+      instances = await DiscoverCastInstances();
+    } catch {
+      return;
+    }
+    for (const inst of instances) {
+      const source: Source = {
+        kind: "remote",
+        name: inst.name,
+        base: inst.url,
+        token: "",
+      };
+      try {
+        const state = await RemoteState(source.base, source.token);
+        if (state.status === "STOPPED") continue;
+        // Something may have started locally while we were discovering.
+        if (playbackState.value.status !== "STOPPED") return;
+        activeSource.value = source;
+        playbackState.value = state;
+        startStatePoll();
+        lastRemotePosition = state.currentTime;
+        return;
+      } catch {
+        /* unreachable or needs a token: skip */
+      }
+    }
+  };
+
   // Playback State
-  const playbackState = ref<main.PlaybackState>({
+  const playbackState = ref<castapi.PlaybackState>({
     status: "STOPPED",
     mediaPath: "",
     mediaName: "",
@@ -99,7 +163,7 @@ export const useCastStore = defineStore("cast", () => {
     // Reset media if needed, or keep it
   };
 
-  const setTrackInfo = (info: main.TrackDisplayInfo) => {
+  const setTrackInfo = (info: castapi.TrackDisplayInfo) => {
     trackInfo.value = info;
     const historyItem = historyStore.items.find(
       (item) => item.path === info.Path
@@ -196,6 +260,7 @@ export const useCastStore = defineStore("cast", () => {
         }
       );
       startStatePoll();
+      lastRemotePosition = playbackState.value.currentTime;
     } else {
       if (!selectedDevice.value) return;
       const backendOptions: options.CastOptions = {
@@ -311,6 +376,7 @@ export const useCastStore = defineStore("cast", () => {
     selectDevice,
     setTrackInfo,
     discoverDevices,
+    attachToRemotePlayback,
     prepareEpisode,
     startCasting,
     checkFFmpeg,

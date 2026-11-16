@@ -5,6 +5,11 @@
       <h3 class="text-md font-bold flex gap-2 mb-2">
         <Video :size="24" class="text-purple-400 m-0.5" />
         {{ playbackState.mediaName }}
+        <span
+          v-if="activeSource.kind === 'remote'"
+          class="ml-auto text-xs font-normal text-gray-400 self-center"
+          >via {{ activeSource.name }}</span
+        >
       </h3>
 
       <!-- Time Display -->
@@ -108,6 +113,7 @@ import {
   SkipForward,
 } from "lucide-vue-next";
 import { useCastStore } from "@/stores/cast";
+import { activeSource } from "@/services/source";
 import { watch } from "vue";
 
 const seekPosition = ref(0);
