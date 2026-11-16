@@ -83,14 +83,6 @@ const updateVolume = async (event: Event) => {
   await mediaService.setVolume(value);
 };
 
-const setVolume = async (value: number) => {
-  await mediaService.setVolume(value);
-};
-
-const toggleMute = async () => {
-  await mediaService.setMuted(!playbackState.value.muted);
-};
-
 const volumeUp = async () => {
   const newVolume = Math.min(1, playbackState.value.volume + 0.01);
   await mediaService.setVolume(newVolume);

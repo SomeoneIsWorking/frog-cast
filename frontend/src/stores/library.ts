@@ -20,7 +20,7 @@ import {
   RemoteTorrents,
   RemoteAddTorrent,
 } from "../../wailsjs/go/main/App";
-import { main } from "../../wailsjs/go/models";
+import { castapi } from "../../wailsjs/go/models";
 import { useToast } from "vue-toastification";
 import { useSettingsStore } from "./settings";
 import { useTranslationStore } from "./translation";
@@ -51,14 +51,14 @@ export const useLibraryStore = defineStore("library", () => {
   const toast = useToast();
   const settingsStore = useSettingsStore();
 
-  const scanResult = ref<main.LibraryScanResult | null>(null);
+  const scanResult = ref<castapi.LibraryScanResult | null>(null);
   const isScanning = ref(false);
   const isTranslating = ref(false);
   const translateProgress = ref<SeasonTranslateProgress | null>(null);
   const isIdentifying = ref(false);
   const identifyProgress = ref<LibraryIdentifyProgress | null>(null);
   // organize state
-  const organizePlan = ref<main.OrganizeMove[]>([]);
+  const organizePlan = ref<castapi.OrganizeMove[]>([]);
   const isPreviewing = ref(false);
   const isOrganizing = ref(false);
 
@@ -145,7 +145,7 @@ export const useLibraryStore = defineStore("library", () => {
 
   // ─── Torrents (per remote source) ─────────────────────────────────────────────
 
-  const torrents = ref<main.TorrentStatus[]>([]);
+  const torrents = ref<castapi.TorrentStatus[]>([]);
   const magnet = ref("");
   const magnetBusy = ref(false);
   let torrentPoll: number | null = null;
@@ -212,7 +212,7 @@ export const useLibraryStore = defineStore("library", () => {
   }
   // torrentForPath finds the in-progress torrent that owns a library episode
   // path, so the tree can show per-episode download progress.
-  function torrentForPath(path: string): main.TorrentStatus | null {
+  function torrentForPath(path: string): castapi.TorrentStatus | null {
     if (!path) return null;
     for (const t of torrents.value) {
       if (t.progress >= 1) continue;
@@ -226,7 +226,7 @@ export const useLibraryStore = defineStore("library", () => {
 
   // loadTreeResult fetches the tree for the active browse source (no UI side
   // effects), used by both the spinner-showing rescan and the silent refresh.
-  async function loadTreeResult(): Promise<main.LibraryScanResult | null> {
+  async function loadTreeResult(): Promise<castapi.LibraryScanResult | null> {
     if (isRemoteBrowse()) {
       return await RemoteLibraryTree(
         browseSource.value.base,

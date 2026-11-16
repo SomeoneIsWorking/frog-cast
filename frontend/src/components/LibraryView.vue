@@ -24,7 +24,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useTranslationStore } from "@/stores/translation";
 import LoadingIcon from "./LoadingIcon.vue";
 import { useToast } from "vue-toastification";
-import { main } from "../../wailsjs/go/models";
+import { castapi } from "../../wailsjs/go/models";
 
 const emit = defineEmits<{
   options: [];
@@ -44,9 +44,9 @@ const expandedSeasons = ref<Set<string>>(new Set());
 // or a single episode.
 const showTranslateModal = ref(false);
 const translateTarget = ref<{
-  show: main.LibraryShow;
-  season: main.LibrarySeason;
-  episode?: main.LibraryEpisode;
+  show: castapi.LibraryShow;
+  season: castapi.LibrarySeason;
+  episode?: castapi.LibraryEpisode;
 } | null>(null);
 const translateLanguage = ref(settingsStore.settings?.defaultTranslationLanguage || "English");
 
@@ -82,14 +82,14 @@ const organizePlan = computed(() => libraryStore.organizePlan);
 
 // ─── Tree helpers ─────────────────────────────────────────────────────────────
 
-function showKey(show: main.LibraryShow) {
+function showKey(show: castapi.LibraryShow) {
   return show.path;
 }
-function seasonKey(show: main.LibraryShow, season: main.LibrarySeason) {
+function seasonKey(show: castapi.LibraryShow, season: castapi.LibrarySeason) {
   return show.path + "|" + season.name;
 }
 
-function toggleShow(show: main.LibraryShow) {
+function toggleShow(show: castapi.LibraryShow) {
   const k = showKey(show);
   if (expandedShows.value.has(k)) {
     expandedShows.value.delete(k);
@@ -97,7 +97,7 @@ function toggleShow(show: main.LibraryShow) {
     expandedShows.value.add(k);
   }
 }
-function toggleSeason(show: main.LibraryShow, season: main.LibrarySeason) {
+function toggleSeason(show: castapi.LibraryShow, season: castapi.LibrarySeason) {
   const k = seasonKey(show, season);
   if (expandedSeasons.value.has(k)) {
     expandedSeasons.value.delete(k);
@@ -106,16 +106,16 @@ function toggleSeason(show: main.LibraryShow, season: main.LibrarySeason) {
   }
 }
 
-function isShowExpanded(show: main.LibraryShow) {
+function isShowExpanded(show: castapi.LibraryShow) {
   return expandedShows.value.has(showKey(show));
 }
-function isSeasonExpanded(show: main.LibraryShow, season: main.LibrarySeason) {
+function isSeasonExpanded(show: castapi.LibraryShow, season: castapi.LibrarySeason) {
   return expandedSeasons.value.has(seasonKey(show, season));
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
 
-async function playEpisode(ep: main.LibraryEpisode) {
+async function playEpisode(ep: castapi.LibraryEpisode) {
   // Local playback needs a device picked in the Devices tab; remote playback
   // picks a target from the remote's own devices in Cast Options.
   if (!isRemoteBrowse.value && !castStore.selectedDevice) {
@@ -139,9 +139,9 @@ const anyTranslating = computed(
 );
 
 function openTranslateModal(
-  show: main.LibraryShow,
-  season: main.LibrarySeason,
-  episode?: main.LibraryEpisode
+  show: castapi.LibraryShow,
+  season: castapi.LibrarySeason,
+  episode?: castapi.LibraryEpisode
 ) {
   translateTarget.value = { show, season, episode };
   translateLanguage.value =
@@ -208,11 +208,11 @@ async function cancelActiveTranslation() {
   }
 }
 
-function episodeCount(show: main.LibraryShow) {
+function episodeCount(show: castapi.LibraryShow) {
   return show.seasons.reduce((sum, s) => sum + s.episodes.length, 0);
 }
 
-function translatedCount(season: main.LibrarySeason) {
+function translatedCount(season: castapi.LibrarySeason) {
   return season.episodes.filter((e) => e.translated).length;
 }
 

@@ -1,4 +1,4 @@
-import { main, options } from "../../wailsjs/go/models";
+import { castapi, options } from "../../wailsjs/go/models";
 import { activeSource, isRemoteActive } from "./source";
 
 // mediaService wraps the playback/transport bindings. When the active playback
@@ -18,7 +18,7 @@ export const mediaService = {
     deviceURL: string,
     mediaPath: string,
     options: options.CastOptions
-  ): Promise<main.PlaybackState> {
+  ): Promise<castapi.PlaybackState> {
     const { CastToDevice } = await import("../../wailsjs/go/main/App");
     return await CastToDevice(deviceURL, mediaPath, options);
   },
