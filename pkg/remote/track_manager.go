@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"wails-cast/pkg/filehelper"
 	"wails-cast/pkg/hls"
 	"wails-cast/pkg/mix"
@@ -26,6 +27,9 @@ type TrackManager struct {
 	DownloadStatus     string
 	DownloadedSegments []bool
 	cancelDownload     context.CancelFunc
+
+	initMu   sync.Mutex
+	initData []byte
 }
 
 type DownloadStatusQeuryResponse struct {
@@ -178,6 +182,48 @@ func (this *TrackManager) downloadSegment(ctx context.Context, segmentIndex int)
 		return nil, errors.Wrapf(err, "failed to download segment: %s", url)
 	}
 
+	// Fragmented-MP4 tracks keep the codec setup in a separate init segment
+	// (#EXT-X-MAP). A media segment alone can't be decoded, so prepend the
+	// init segment to make every stored segment self-contained for ffmpeg.
+	initData, err := this.getInitSegment(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if initData != nil {
+		data = append(append(make([]byte, 0, len(initData)+len(data)), initData...), data...)
+	}
+
+	return data, nil
+}
+
+// getInitSegment downloads (once) and returns the track's #EXT-X-MAP init
+// segment, or nil when the track has none (MPEG-TS segments).
+func (this *TrackManager) getInitSegment(ctx context.Context) ([]byte, error) {
+	m := this.Manifest.Map
+	if m == nil || m.URI == "" {
+		return nil, nil
+	}
+	this.initMu.Lock()
+	defer this.initMu.Unlock()
+	if this.initData != nil {
+		return this.initData, nil
+	}
+	ref, err := url.Parse(m.URI)
+	if err != nil {
+		return nil, errors.Wrapf(err, "invalid init segment URI: %s", m.URI)
+	}
+	initURL := this.ManifestURL.ResolveReference(ref)
+	data, err := this.FileDownloader.DownloadFile(ctx, initURL)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to download init segment: %s", initURL)
+	}
+	if br := m.ByteRange; br != nil {
+		if br.Offset < 0 || br.Offset+br.Length > int64(len(data)) {
+			return nil, fmt.Errorf("init segment byte range %d@%d out of bounds (%d bytes)", br.Length, br.Offset, len(data))
+		}
+		data = data[br.Offset : br.Offset+br.Length]
+	}
+	this.initData = data
 	return data, nil
 }
 

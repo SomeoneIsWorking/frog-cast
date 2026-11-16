@@ -66,6 +66,10 @@ func (this *RemoteHandler) ServeManifestPlaylist(ctx context.Context) (string, e
 	videoVariant.Resolution = ""
 	videoVariant.URI = urlhelper.ParseFixed("/video.m3u8")
 	videoVariant.Subtitles = ""
+	// Every segment is re-encoded to H.264 High + AAC-LC, so advertise that
+	// rather than the source's codecs. Passing on e.g. the source's AV1 or HEVC
+	// string makes the receiver reject a stream it could actually play.
+	videoVariant.Codecs = "avc1.640028,mp4a.40.2"
 
 	if len(this.Manifest.AudioTracks) > 0 {
 		audio := this.Manifest.AudioTracks[this.Options.AudioTrack]
@@ -88,6 +92,9 @@ func (this *RemoteHandler) getTrackManager(trackType string) *remote.TrackManage
 func (this *RemoteHandler) ServeTrackPlaylist(ctx context.Context, trackType string) (string, error) {
 	trackManager := this.getTrackManager(trackType)
 	playlist := *trackManager.Manifest
+	// Segments are served as transcoded MPEG-TS with any init segment already
+	// baked in, so the source's #EXT-X-MAP must not be passed on.
+	playlist.Map = nil
 	playlist.Segments = make([]*hls.Segment, len(trackManager.Manifest.Segments))
 
 	cumulativeTime := 0.0
