@@ -205,9 +205,9 @@ func extract(pageURL string, scriptPath string) (*ExtractResult, error) {
 			strings.Contains(contentType, "mpegurl")) {
 			hlsURL = reqURL
 			manifestBody = ctx.Response.Body()
-			capReferer = ctx.Request.Header("Referer")
-			capOrigin = ctx.Request.Header("Origin")
-			capCookie = ctx.Request.Header("Cookie")
+			capReferer = requestHeader(ctx.Request, "Referer")
+			capOrigin = requestHeader(ctx.Request, "Origin")
+			capCookie = requestHeader(ctx.Request, "Cookie")
 			manifestFound = true
 			fmt.Printf("Found HLS stream: %s (Content-Type: %s, Referer: %s)\n", hlsURL, contentType, capReferer)
 		}
@@ -347,6 +347,19 @@ func extract(pageURL string, scriptPath string) (*ExtractResult, error) {
 		Headers:   headers,
 		Subtitles: sSubs,
 	}, nil
+}
+
+// requestHeader returns a captured request header, or "" when the request
+// didn't send it. rod's Header() stringifies a missing header as "<nil>",
+// which would then be replayed to the CDN as a literal header value. Header
+// names are matched case-insensitively.
+func requestHeader(req *rod.HijackRequest, key string) string {
+	for k, v := range req.Headers() {
+		if strings.EqualFold(k, key) && !v.Nil() {
+			return v.String()
+		}
+	}
+	return ""
 }
 
 // findScript scans all Lua scripts for match_patterns matching the URL.

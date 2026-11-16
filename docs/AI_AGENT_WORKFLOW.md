@@ -77,7 +77,9 @@ func main() {
 }
 ```
 
-Save this as `/tmp/probe_{site}.go` and run with `go run /tmp/probe_{site}.go`.
+Save this as `cmd/probe/main.go` inside the repo (it needs the repo's `go.mod`
+to resolve go-rod) and run `go run ./cmd/probe`. Delete it when done; it isn't
+committed.
 
 ## Step 2: Identify the Video Source
 
@@ -173,32 +175,23 @@ end
 Save the script to the config scripts directory (printed by the app on startup,
 typically `~/Library/Application Support/wails-cast/scripts/`).
 
-Run the extraction test:
+Run the app's real extractor against the page (from the repo root):
 
-```go
-package main
-
-import (
-	"fmt"
-	"wails-cast/pkg/extractor"
-)
-
-func main() {
-	result, err := extractor.Extract("https://example.com/video-page")
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
-	}
-	fmt.Printf("Title: %s\n", result.Title)
-	fmt.Printf("URL: %s\n", result.URL)
-	fmt.Printf("Manifest: %d bytes\n", len(result.Manifest))
-	if len(result.Manifest) > 0 {
-		fmt.Printf("First line: %s\n", result.Manifest[:50])
-	}
-}
+```bash
+go run ./cmd/extract "https://example.com/video-page"
 ```
 
-Run with: `go run /tmp/test_{site}.go`
+It prints the matched script, the manifest URL, the headers that will be
+replayed to the CDN, subtitles and the start of the manifest.
+
+To check the stream also survives the cast pipeline (segment download, init
+segments, ffmpeg transcode), add `-segments <dir>`; it writes the playlists
+the Chromecast would get plus the first transcoded video/audio segment:
+
+```bash
+go run ./cmd/extract -segments ./out -video 0 -audio 0 "https://example.com/video-page"
+ffprobe out/video_segment_0.ts
+```
 
 ## Step 6: Debug Failures
 
