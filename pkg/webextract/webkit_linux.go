@@ -1,3 +1,5 @@
+//go:build !chromium
+
 package webextract
 
 /*
@@ -132,7 +134,6 @@ import (
 	"os"
 	"runtime/cgo"
 	"strings"
-	"time"
 	"unsafe"
 )
 
@@ -241,26 +242,11 @@ func Extract(ctx context.Context, pageURL string, rules Rules, opts Options) (*R
 		C.view_load(v.c, uri)
 	})
 
-	var c collector
-	tick := time.NewTicker(200 * time.Millisecond)
-	defer tick.Stop()
-	for !c.ready(time.Now()) {
-		select {
-		case m := <-v.messages:
-			if opts.Trace != nil {
-				opts.Trace(m)
-			}
-			c.add(m)
-		case <-tick.C:
-		case <-ctx.Done():
-			if c.firstSeen.IsZero() {
-				return nil, fmt.Errorf("no HLS stream on %s: %w", pageURL, ctx.Err())
-			}
-			return c.result(userAgent, nil)
-		}
+	c, err := listen(ctx, pageURL, v.messages, opts)
+	if err != nil {
+		return nil, err
 	}
-
-	streamURL := c.streamURL()
+	streamURL := c.pick().URL
 	onMain(func() {
 		uri := C.CString(streamURL)
 		defer C.free(unsafe.Pointer(uri))

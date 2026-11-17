@@ -1,7 +1,8 @@
-// Command extract runs the app's real extractor against a page URL and prints
-// what it found, for testing Lua extraction scripts without the GUI.
+// Command extract runs the app's extractor against a page URL and prints what
+// the page reported and what was found, for testing Lua site scripts without
+// the GUI.
 //
-//	go run ./cmd/extract <page-url>
+//	go run ./cmd/extract [-json out.json] <page-url>
 //	go run ./cmd/extract -segments <out-dir> [-video N] [-audio N] <page-url>
 //
 // With -segments it also runs the same download + transcode path a cast uses
@@ -11,55 +12,84 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"wails-cast/pkg/extractor"
 	"wails-cast/pkg/options"
 	"wails-cast/pkg/remote"
 	"wails-cast/pkg/stream"
+	"wails-cast/pkg/webextract"
 )
+
+// The WebKit host's main loop runs on the main thread.
+func init() {
+	runtime.LockOSThread()
+}
 
 func main() {
 	segmentsDir := flag.String("segments", "", "also download+transcode the first segments into this directory")
 	videoTrack := flag.Int("video", 0, "video track index for -segments")
 	audioTrack := flag.Int("audio", 0, "audio track index for -segments")
+	out := flag.String("json", "", "write the result to this file")
 	flag.Parse()
 	if flag.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: go run ./cmd/extract [-segments dir [-video N] [-audio N]] <page-url>")
+		fmt.Fprintln(os.Stderr, "usage: go run ./cmd/extract [-json out] [-segments dir [-video N] [-audio N]] <page-url>")
 		os.Exit(2)
 	}
 	pageURL := flag.Arg(0)
 
-	if *segmentsDir != "" {
-		if err := runSegments(pageURL, *segmentsDir, *videoTrack, *audioTrack); err != nil {
-			fmt.Fprintf(os.Stderr, "stream test failed: %v\n", err)
-			os.Exit(1)
+	var err error
+	webextract.RunMainLoop(func() {
+		if *segmentsDir != "" {
+			err = runSegments(pageURL, *segmentsDir, *videoTrack, *audioTrack)
+		} else {
+			err = extract(pageURL, *out)
 		}
-		return
-	}
-
-	result, err := extractor.Extract(pageURL)
+	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "extraction failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Title:    %s\n", result.Title)
-	fmt.Printf("URL:      %s\n", result.URL)
-	fmt.Printf("Headers:  %v\n", result.Headers)
-	fmt.Printf("Cookies:  %d\n", len(result.Cookies))
-	fmt.Printf("Subtitles: %d\n", len(result.Subtitles))
-	for _, s := range result.Subtitles {
+}
+
+func extract(pageURL, out string) error {
+	start := time.Now()
+	trace := func(m webextract.Message) {
+		fmt.Printf("%5.1fs %-11s top=%-5v %s  [frame %s]\n", time.Since(start).Seconds(), m.Type, m.Top, cut(m.URL, 110), cut(m.Frame, 80))
+	}
+	res, err := extractor.Extract(pageURL, trace)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("found in %s\ntitle: %s\nmanifest: %s (%d bytes, master=%v)\nheaders: %v\ncookies: %d\n",
+		time.Since(start).Round(100*time.Millisecond), res.Title, res.ManifestURL, len(res.Manifest),
+		strings.Contains(res.Manifest, "#EXT-X-STREAM-INF"), res.Headers, len(res.Cookies))
+	fmt.Printf("subtitles: %d\n", len(res.Subtitles))
+	for _, s := range res.Subtitles {
 		fmt.Printf("  - %s %s\n", s.Label, s.URL)
 	}
-	lines := strings.Split(result.Manifest, "\n")
-	if len(lines) > 15 {
-		lines = lines[:15]
+	if out == "" {
+		return nil
 	}
-	fmt.Printf("Manifest (%d bytes):\n%s\n", len(result.Manifest), strings.Join(lines, "\n"))
+	data, err := json.MarshalIndent(res, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(out, data, 0o644)
+}
+
+func cut(s string, n int) string {
+	if len(s) > n {
+		return s[:n] + "…"
+	}
+	return s
 }
 
 func runSegments(pageURL, dir string, videoTrack, audioTrack int) error {

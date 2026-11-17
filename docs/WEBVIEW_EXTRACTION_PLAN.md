@@ -1,8 +1,9 @@
 # WebView extraction (no devtools, no Chrome)
 
-Status: step 1 built (2026-11-17): `pkg/webextract` and `cmd/webextract`
-extract on Linux through WebKitGTK. The app still extracts through Chrome
-(`pkg/extractor`, go-rod); steps 2 and 3 are open.
+Status (2026-11-17): the app extracts through `pkg/webextract`: WebKitGTK on
+Linux, with no Chrome or devtools; Chromium, running the same script, on
+other platforms until a native host exists. The phone and macOS hosts are
+open (see Next).
 
 ## Why
 
@@ -25,12 +26,12 @@ responses, reporting:
   tracks (`#xywh=`);
 - a playlist URL set directly on a media element (native HLS);
 - per-site rules: selectors to click once the frame has loaded (play
-  overlays), and regexes finding the stream URL in a response body or in a
-  frame's inline scripts.
+  overlays), and bodies or frame HTML for a script's intercept handler to
+  find the stream URL in.
 
 It also switches lazy iframes to eager, since nobody scrolls the view. Messages
-go to `window.webkit.messageHandlers.cast` (WebKit) or `window.CastBridge`
-(an Android WebView).
+go to `window.webkit.messageHandlers.cast` (WebKit), `window.CastBridge` (an
+Android WebView) or the `__castPost` devtools binding (Chromium).
 
 The Linux host (`webkit_linux.go`) loads the page in an offscreen
 `WebKitWebView` on the GTK main loop, with an ephemeral context, autoplay
@@ -41,11 +42,18 @@ returns the playlist, the subtitles, the Referer (the requesting frame), the
 Origin when cross-origin, the WebView's User-Agent and the cookies WebKit
 holds for the playlist URL.
 
-Try a site with
-`go run ./cmd/webextract -url <page> -click <selector> -block <substring>`.
-It prints every message and the result, and `-json` writes the result.
+The Chromium host (`chromium.go`, built on non-Linux or with `-tags
+chromium`) launches Chromium with site isolation off, so the script and
+binding reach every frame, and claims codec support, which Chromium builds
+lack and players check before requesting a stream.
 
-## Results (2026-11-17, from Fedora)
+Site rules come from the Lua scripts (`docs/LUA_SCRIPTS.md`):
+`pkg/extractor` turns `block_urls`, `click` and `intercepts` into `Rules` and
+runs the intercept handlers on the bodies the page reports. Without a script
+the page opens in a window for someone to click play. Try a site with
+`go run ./cmd/extract <page>`, which prints every message.
+
+## Results (2026-11-17, from Fedora, WebKit host)
 
 | Site | Rule | Found | Plays through `/play-extracted` |
 | --- | --- | --- | --- |
@@ -63,21 +71,21 @@ image under fullhdfilmizlesene's `#play-video`, which has
 fastplay.mom's 404 hits the Chrome path too, since both hand downloads to Go's
 HTTP client. Some client fingerprint gives non-browser clients away. The fix
 would be fetching that site's playlists and segments through the WebView;
-not attempted. The Lua script for that site also still matches the old
-`.mom` domain.
+not attempted.
+
+Through the app's `/play-url`, hdfilmcehennemi extracted in 6 s on the app's
+own GTK loop and cast to a local player. The unscripted path opened the hls.js
+demo page and found its master in 3.5 s. The Chromium host finds the same
+streams, but launching rod's downloaded Chromium (no Chrome installed here)
+takes 25 s, as it did for the old extractor.
 
 ## Next
 
-1. Use it in the app on Linux: run `Extract` on the app's GTK main loop
-   (Wails v2 runs one) in `RemoteManager.doExtraction`, with site rules in
-   place of the Lua scripts (`match`, `click`, `block`, `bodyRules`,
-   `inlineRules`). A page without rules opens visibly for someone to click
-   play. Then drop go-rod.
-2. Phone: the same `capture.js` in an Android WebView
+1. Phone: the same `capture.js` in an Android WebView
    (`addDocumentStartJavaScript` for every frame, a `CastBridge` JavaScript
    interface, `CookieManager` for HttpOnly cookies), sending the result with
    `/play-extracted`. Fyne has no WebView, so this needs either a native
    Android screen in the remote or the move to Wails 3 (stable on desktop
    since v3.0.0; mobile still experimental).
-3. macOS: the same script through `WKUserScript` (all frames) and a
-   `WKScriptMessageHandler`.
+2. macOS: the same script through `WKUserScript` (all frames) and a
+   `WKScriptMessageHandler`, replacing the Chromium host and go-rod.

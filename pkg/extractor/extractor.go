@@ -1,373 +1,137 @@
+// Package extractor finds a web page's HLS stream with pkg/webextract,
+// adapted to the site by a Lua script from {configDir}/scripts/.
+//
+// A script sets these globals, each optional:
+//
+//	match_patterns = { "example.com/*" }   -- pages it applies to
+//	block_urls = { "disable-devtool" }     -- URL substrings never loaded
+//	click = { ".play-overlay" }            -- clicked in any frame once they appear
+//	intercepts = { { pattern = "api/source", handler = function(url, body) return stream_url end } }
+//
+// An intercept's handler sees the response bodies (and frame HTML) whose URL
+// contains its pattern and returns the stream URL, or nil. Handlers may call
+// log(text) and json_decode(text).
 package extractor
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
 
-	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
-	"github.com/go-rod/rod/lib/proto"
-
 	"wails-cast/pkg/folders"
+	"wails-cast/pkg/webextract"
 )
 
 const (
-	WaitAfterManifestFound = 2 * time.Second
-
-	clickTimeout = 10 * time.Second
-
-	browserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
+	// scriptedTimeout bounds a page a script plays by itself.
+	scriptedTimeout = 45 * time.Second
+	// manualTimeout leaves time for someone to click play in the window.
+	manualTimeout = 5 * time.Minute
 )
 
-type ExtractedSubtitleTrack struct {
-	URL     string
-	Content string `json:"-"`
-	Charset string
-	Label   string
+// Extract finds pageURL's stream. With a matching script the page loads
+// hidden; without one it opens in a window for someone to click play. trace,
+// when set, sees what the page reports.
+func Extract(pageURL string, trace func(webextract.Message)) (*webextract.Result, error) {
+	opts := webextract.Options{Trace: trace}
+	rules := webextract.Rules{}
+	timeout := manualTimeout
+	if path := findScript(pageURL); path != "" {
+		fmt.Printf("Found Lua script: %s\n", path)
+		s, err := loadScript(path)
+		if err != nil {
+			return nil, err
+		}
+		defer s.L.Close()
+		rules = s.rules
+		opts.OnBody = s.onBody
+		timeout = scriptedTimeout
+	} else {
+		fmt.Println("No Lua script found, opening the page to play by hand")
+		opts.Visible = true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return webextract.Extract(ctx, pageURL, rules, opts)
 }
 
-type ExtractResult struct {
-	URL       *url.URL
-	Title     string
-	Manifest  string `json:"-"`
-	Cookies   map[string]string
-	Headers   map[string]string
-	Subtitles []ExtractedSubtitleTrack
+// HasScript reports whether a Lua script matches the page, so extracting it
+// needs no one at the window.
+func HasScript(pageURL string) bool {
+	return findScript(pageURL) != ""
 }
 
-type PlaylistExtractionResult struct {
-	URL      *url.URL
-	Cookies  map[string]string
-	Headers  map[string]string
-	Manifest string
-}
-
-type interceptRule struct {
+type intercept struct {
 	pattern string
 	handler lua.LValue
 }
 
-// Extract navigates to the page and extracts the HLS stream.
-//
-// It first looks for a Lua script in {configDir}/scripts/ whose match_patterns
-// match the URL. Whether or not a script is found, the same core extraction
-// runs: a headless (scripted) or headful (generic) browser drives the page, a
-// hijack router captures the manifest body and the *real* request headers the
-// browser used (Referer/Origin/Cookie), and VTT subtitle tracks are collected.
-//
-// A matching Lua script only augments this with automation: block_urls,
-// intercepts (pull the HLS URL out of a non-HLS response body), and on_ready
-// (page interaction). Each of those defaults to the generic behavior when the
-// script omits it.
-func Extract(pageURL string) (*ExtractResult, error) {
-	scriptPath := findScript(pageURL)
-	if scriptPath != "" {
-		fmt.Printf("Found Lua script: %s\n", scriptPath)
-	} else {
-		fmt.Println("No Lua script found, using generic extraction")
-	}
-	return extract(pageURL, scriptPath)
+// script is a loaded site script.
+type script struct {
+	L          *lua.LState
+	rules      webextract.Rules
+	intercepts []intercept
 }
 
-func extract(pageURL string, scriptPath string) (*ExtractResult, error) {
-	scripted := scriptPath != ""
-
-	path, _ := launcher.LookPath()
-	// Scripted extractions automate the play interaction, so they run headless.
-	// Without a script a human may need to click play, so run headful.
-	u := launcher.New().Bin(path).Headless(scripted).MustLaunch()
-	browser := rod.New().ControlURL(u).MustConnect()
-	defer browser.MustClose()
-
-	page := browser.MustPage("")
-	page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{UserAgent: browserUserAgent})
-	page.MustEvalOnNewDocument(`
-		HTMLMediaElement.prototype.canPlayType = function(type) {
-			if (type && (type.includes('video') || type.includes('audio'))) return 'probably';
-			return '';
-		};
-		if (window.MediaSource) {
-			MediaSource.isTypeSupported = function(type) {
-				if (type && (type.includes('video') || type.includes('audio'))) return true;
-				return false;
-			};
-		}
-	`)
-
-	// Lua automation (only when a script matched). Everything below defaults to
-	// generic behavior when the corresponding global is absent.
-	var (
-		L          *lua.LState
-		blockURLs  []string
-		intercepts []interceptRule
-		onReady    lua.LValue = lua.LNil
-	)
-	if scripted {
-		L = lua.NewState()
-		defer L.Close()
-		registerFuncs(L, page)
-		if err := L.DoFile(scriptPath); err != nil {
-			return nil, fmt.Errorf("load script: %w", err)
-		}
-		if tbl, ok := L.GetGlobal("block_urls").(*lua.LTable); ok {
-			tbl.ForEach(func(_, v lua.LValue) { blockURLs = append(blockURLs, lua.LVAsString(v)) })
-		}
-		if tbl, ok := L.GetGlobal("intercepts").(*lua.LTable); ok {
-			tbl.ForEach(func(_, v lua.LValue) {
-				if rule, ok := v.(*lua.LTable); ok {
-					intercepts = append(intercepts, interceptRule{
-						pattern: lua.LVAsString(rule.RawGetString("pattern")),
-						handler: rule.RawGetString("handler"),
-					})
-				}
-			})
-		}
-		onReady = L.GetGlobal("on_ready")
+func loadScript(path string) (*script, error) {
+	L := lua.NewState()
+	registerFuncs(L)
+	if err := L.DoFile(path); err != nil {
+		L.Close()
+		return nil, fmt.Errorf("load script: %w", err)
 	}
-
-	// Shared capture state, guarded by mu (hijack handlers run concurrently).
-	var (
-		mu            sync.Mutex
-		manifestFound bool
-		hlsURL        string
-		manifestBody  string // captured inline; empty means "fetch hlsURL below"
-		capReferer    string
-		capOrigin     string
-		capCookie     string
-		subtitleSeen  = map[string]bool{}
-		subtitles     []ExtractedSubtitleTrack
-	)
-
-	client := &http.Client{Timeout: 20 * time.Second}
-
-	router := page.HijackRequests()
-	router.MustAdd("*", func(ctx *rod.Hijack) {
-		reqURL := ctx.Request.URL().String()
-
-		// block_urls (Lua): replace matching requests with an empty JS file.
-		for _, b := range blockURLs {
-			if strings.Contains(reqURL, b) {
-				ctx.Response.SetHeader("Content-Type", "application/javascript")
-				ctx.Response.SetBody("// blocked")
-				return
+	s := &script{L: L}
+	s.rules.Block = stringList(L.GetGlobal("block_urls"))
+	s.rules.Click = stringList(L.GetGlobal("click"))
+	if tbl, ok := L.GetGlobal("intercepts").(*lua.LTable); ok {
+		tbl.ForEach(func(_, v lua.LValue) {
+			if rule, ok := v.(*lua.LTable); ok {
+				i := intercept{lua.LVAsString(rule.RawGetString("pattern")), rule.RawGetString("handler")}
+				s.intercepts = append(s.intercepts, i)
+				s.rules.Intercept = append(s.rules.Intercept, i.pattern)
 			}
-		}
-
-		// Fetch the response server-side so we can inspect its body/headers.
-		if err := ctx.LoadResponse(client, true); err != nil {
-			ctx.ContinueRequest(&proto.FetchContinueRequest{})
-			return
-		}
-		contentType := ctx.Response.Headers().Get("Content-Type")
-
-		mu.Lock()
-		defer mu.Unlock()
-
-		// Lua intercepts: a handler may pull the HLS URL out of a non-HLS body
-		// (e.g. a JSON API, or an embed page's HTML). It returns the URL, which
-		// we fetch further below. We do NOT capture this request's Referer: the
-		// intercepted request is not the manifest request, so its referer isn't
-		// the manifest's. The fetch below defaults to the m3u8's own origin.
-		if !manifestFound {
-			for _, rule := range intercepts {
-				if !strings.Contains(reqURL, rule.pattern) {
-					continue
-				}
-				L.Push(rule.handler)
-				L.Push(lua.LString(reqURL))
-				L.Push(lua.LString(ctx.Response.Body()))
-				if err := L.PCall(2, 1, nil); err == nil {
-					res := L.Get(-1)
-					L.Pop(1)
-					if res != lua.LNil {
-						hlsURL = lua.LVAsString(res)
-						manifestFound = true
-						fmt.Printf("Lua intercept returned HLS URL: %s\n", hlsURL)
-					}
-				}
-				break
-			}
-		}
-
-		// Default detection: capture the manifest body and the real headers the
-		// browser used. This is the correct Referer — the m3u8's own origin is
-		// often wrong (embed on domain A, CDN on domain B gated by Referer: A).
-		if !manifestFound && (strings.Contains(contentType, "application/vnd.apple.mpegurl") ||
-			strings.Contains(contentType, "application/x-mpegURL") ||
-			strings.Contains(contentType, "mpegurl")) {
-			hlsURL = reqURL
-			manifestBody = ctx.Response.Body()
-			capReferer = requestHeader(ctx.Request, "Referer")
-			capOrigin = requestHeader(ctx.Request, "Origin")
-			capCookie = requestHeader(ctx.Request, "Cookie")
-			manifestFound = true
-			fmt.Printf("Found HLS stream: %s (Content-Type: %s, Referer: %s)\n", hlsURL, contentType, capReferer)
-		}
-
-		// Subtitles (VTT), collected regardless of scripted/generic.
-		if strings.Contains(strings.ToLower(contentType), "text/vtt") && !subtitleSeen[reqURL] {
-			subtitleSeen[reqURL] = true
-			label := ""
-			if p, err := url.Parse(reqURL); err == nil {
-				parts := strings.Split(p.Path, "/")
-				label = strings.TrimSuffix(parts[len(parts)-1], ".vtt")
-			}
-			subtitles = append(subtitles, ExtractedSubtitleTrack{
-				URL:     reqURL,
-				Content: ctx.Response.Body(),
-				Label:   label,
-			})
-		}
-	})
-	go router.Run()
-
-	fmt.Printf("Navigating to %s...\n", pageURL)
-	page.MustNavigate(pageURL)
-	page.MustWaitLoad()
-	fmt.Printf("Page loaded. Title: %s\n", page.MustInfo().Title)
-
-	// Interaction: run the Lua on_ready if present, otherwise the generic
-	// best-effort click of common play-button selectors.
-	if onReady != lua.LNil {
-		L.Push(onReady)
-		if err := L.PCall(0, 0, nil); err != nil {
-			fmt.Printf("Lua on_ready error: %v\n", err)
-		}
-	} else {
-		for _, sel := range []string{"#play-video", ".play-button", ".video-play-button"} {
-			el, err := page.Timeout(3 * time.Second).Element(sel)
-			if err == nil {
-				fmt.Printf("Clicking play button: %s\n", sel)
-				box := el.MustShape().Box()
-				page.Mouse.MustMoveTo(box.X+box.Width/2, box.Y+box.Height/2)
-				page.Mouse.MustDown("left")
-				page.Mouse.MustUp("left")
-				time.Sleep(2 * time.Second)
-				break
-			}
-		}
+		})
 	}
-
-	// Wait for the manifest. Headful/generic waits longer for a manual click.
-	timeout := 30 * time.Second
-	if !scripted {
-		timeout = 5 * time.Minute
-	}
-	fmt.Println("Waiting for HLS URL...")
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		mu.Lock()
-		found := manifestFound
-		mu.Unlock()
-		if found {
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	// Snapshot the captured values.
-	mu.Lock()
-	found := manifestFound
-	sHlsURL, sBody, sRef, sOrg, sCookie := hlsURL, manifestBody, capReferer, capOrigin, capCookie
-	sSubs := append([]ExtractedSubtitleTrack(nil), subtitles...)
-	mu.Unlock()
-
-	if !found {
-		return nil, fmt.Errorf("timeout waiting for HLS URL")
-	}
-
-	cookies := map[string]string{}
-
-	// An intercept returned only a URL — fetch it now, carrying the real
-	// Referer/Origin/Cookie from the request that revealed it (falling back to
-	// the m3u8's own origin only if we captured nothing).
-	if sBody == "" {
-		fmt.Printf("Loading HLS manifest: %s\n", sHlsURL)
-		req, _ := http.NewRequest("GET", sHlsURL, nil)
-		req.Header.Set("User-Agent", browserUserAgent)
-		if sRef != "" {
-			req.Header.Set("Referer", sRef)
-			if sOrg != "" {
-				req.Header.Set("Origin", sOrg)
-			}
-		} else if parsed, err := url.Parse(sHlsURL); err == nil {
-			req.Header.Set("Referer", parsed.Scheme+"://"+parsed.Host+"/")
-			req.Header.Set("Origin", parsed.Scheme+"://"+parsed.Host)
-		}
-		if sCookie != "" {
-			req.Header.Set("Cookie", sCookie)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("load manifest: %w", err)
-		}
-		defer resp.Body.Close()
-		b, _ := io.ReadAll(resp.Body)
-		sBody = string(b)
-		for _, c := range resp.Cookies() {
-			cookies[c.Name] = c.Value
-		}
-		sRef = req.Header.Get("Referer")
-		sOrg = req.Header.Get("Origin")
-	}
-
-	// Cookies from the captured request Cookie header.
-	if sCookie != "" {
-		for _, cookie := range strings.Split(sCookie, "; ") {
-			parts := strings.SplitN(cookie, "=", 2)
-			if len(parts) == 2 {
-				cookies[parts[0]] = parts[1]
-			}
-		}
-	}
-
-	headers := map[string]string{"User-Agent": browserUserAgent}
-	if sRef != "" {
-		headers["Referer"] = sRef
-	}
-	if sOrg != "" {
-		headers["Origin"] = sOrg
-	}
-
-	parsedURL, _ := url.Parse(sHlsURL)
-	fmt.Printf("Manifest loaded: %d bytes\n", len(sBody))
-	return &ExtractResult{
-		URL:       parsedURL,
-		Title:     page.MustInfo().Title,
-		Manifest:  sBody,
-		Cookies:   cookies,
-		Headers:   headers,
-		Subtitles: sSubs,
-	}, nil
+	return s, nil
 }
 
-// requestHeader returns a captured request header, or "" when the request
-// didn't send it. rod's Header() stringifies a missing header as "<nil>",
-// which would then be replayed to the CDN as a literal header value. Header
-// names are matched case-insensitively.
-func requestHeader(req *rod.HijackRequest, key string) string {
-	for k, v := range req.Headers() {
-		if strings.EqualFold(k, key) && !v.Nil() {
-			return v.String()
+func stringList(v lua.LValue) []string {
+	var out []string
+	if tbl, ok := v.(*lua.LTable); ok {
+		tbl.ForEach(func(_, item lua.LValue) { out = append(out, lua.LVAsString(item)) })
+	}
+	return out
+}
+
+// onBody runs the first intercept whose pattern the URL contains.
+func (s *script) onBody(reqURL, body string) string {
+	for _, rule := range s.intercepts {
+		if !strings.Contains(reqURL, rule.pattern) {
+			continue
 		}
+		s.L.Push(rule.handler)
+		s.L.Push(lua.LString(reqURL))
+		s.L.Push(lua.LString(body))
+		if err := s.L.PCall(2, 1, nil); err != nil {
+			fmt.Printf("Lua intercept %q: %v\n", rule.pattern, err)
+			return ""
+		}
+		res := s.L.Get(-1)
+		s.L.Pop(1)
+		if res == lua.LNil {
+			return ""
+		}
+		fmt.Printf("Lua intercept returned HLS URL: %s\n", lua.LVAsString(res))
+		return lua.LVAsString(res)
 	}
 	return ""
-}
-
-// HasScript reports whether a Lua script matches the page, so extracting it
-// runs headless instead of in a visible browser that waits for a click.
-func HasScript(pageURL string) bool {
-	return findScript(pageURL) != ""
 }
 
 // findScript scans all Lua scripts for match_patterns matching the URL.
@@ -395,33 +159,21 @@ func findScript(pageURL string) string {
 func matchesURLPattern(scriptPath, pageURL string) bool {
 	L := lua.NewState()
 	defer L.Close()
+	registerFuncs(L)
 	if err := L.DoFile(scriptPath); err != nil {
 		return false
 	}
-	tbl := L.GetGlobal("match_patterns")
-	if tbl == lua.LNil {
+	parsed, err := url.Parse(pageURL)
+	if err != nil {
 		return false
 	}
-	t, ok := tbl.(*lua.LTable)
-	if !ok {
-		return false
+	hostPath := strings.TrimPrefix(parsed.Host+parsed.Path, "www.")
+	for _, pattern := range stringList(L.GetGlobal("match_patterns")) {
+		if pattern != "" && (wildcardMatch(pattern, pageURL) || wildcardMatch(pattern, hostPath)) {
+			return true
+		}
 	}
-	// Also try matching against just scheme+host+path (no query/fragment)
-	parsed, _ := url.Parse(pageURL)
-	hostPath := parsed.Host + parsed.Path
-	hostPath = strings.TrimPrefix(hostPath, "www.")
-
-	var matched bool
-	t.ForEach(func(_, value lua.LValue) {
-		pattern := lua.LVAsString(value)
-		if pattern == "" {
-			return
-		}
-		if wildcardMatch(pattern, pageURL) || wildcardMatch(pattern, hostPath) {
-			matched = true
-		}
-	})
-	return matched
+	return false
 }
 
 // wildcardMatch checks if text matches a pattern containing * wildcards.
@@ -444,102 +196,21 @@ func wildcardMatch(pattern, text string) bool {
 	return strings.HasSuffix(text, parts[len(parts)-1])
 }
 
-func registerFuncs(L *lua.LState, page *rod.Page) {
-	L.SetGlobal("wait_element", L.NewFunction(func(L *lua.LState) int {
-		selector := L.CheckString(1)
-		timeout := L.OptInt(2, 10)
-		_, err := page.Timeout(time.Duration(timeout) * time.Second).Element(selector)
-		if err != nil {
-			L.Push(lua.LNil)
-			L.Push(lua.LString(err.Error()))
-			return 2
-		}
-		L.Push(lua.LTrue)
-		return 1
-	}))
-
-	L.SetGlobal("click", L.NewFunction(func(L *lua.LState) int {
-		selector := L.CheckString(1)
-		// rod waits for an element indefinitely; a page without it must fail.
-		el, err := page.Timeout(clickTimeout).Element(selector)
-		if err != nil {
-			L.Push(lua.LNil)
-			L.Push(lua.LString(err.Error()))
-			return 2
-		}
-		shape, err := el.Shape()
-		if err != nil {
-			L.Push(lua.LNil)
-			L.Push(lua.LString(err.Error()))
-			return 2
-		}
-		box := shape.Box()
-		page.Mouse.MustMoveTo(box.X+box.Width/2, box.Y+box.Height/2)
-		page.Mouse.MustDown("left")
-		page.Mouse.MustUp("left")
-		L.Push(lua.LTrue)
-		return 1
-	}))
-
-	L.SetGlobal("sleep", L.NewFunction(func(L *lua.LState) int {
-		secs := L.CheckNumber(1)
-		time.Sleep(time.Duration(secs*1000) * time.Millisecond)
-		return 0
-	}))
-
+func registerFuncs(L *lua.LState) {
 	L.SetGlobal("log", L.NewFunction(func(L *lua.LState) int {
 		fmt.Println("[LUA]", L.CheckString(1))
 		return 0
 	}))
-
-	L.SetGlobal("js", L.NewFunction(func(L *lua.LState) int {
-		code := L.CheckString(1)
-		result, err := page.Eval(code)
-		if err != nil {
-			L.Push(lua.LNil)
-			L.Push(lua.LString(err.Error()))
-			return 2
-		}
-		L.Push(lua.LTrue)
-		_ = result
-		return 1
-	}))
-
-	L.SetGlobal("scroll_into_view", L.NewFunction(func(L *lua.LState) int {
-		selector := L.CheckString(1)
-		_, err := page.Eval(fmt.Sprintf(`() => {
-			var el = document.querySelector('%s');
-			if (el) el.scrollIntoView({behavior: 'instant', block: 'center'});
-		}`, selector))
-		if err != nil {
-			L.Push(lua.LNil)
-			L.Push(lua.LString(err.Error()))
-			return 2
-		}
-		time.Sleep(500 * time.Millisecond)
-		L.Push(lua.LTrue)
-		return 1
-	}))
-
 	L.SetGlobal("json_decode", L.NewFunction(func(L *lua.LState) int {
-		s := L.CheckString(1)
-		val, err := decodeJSON(L, s)
-		if err != nil {
+		var val interface{}
+		if err := json.Unmarshal([]byte(L.CheckString(1)), &val); err != nil {
 			L.Push(lua.LNil)
 			L.Push(lua.LString(err.Error()))
 			return 2
 		}
-		L.Push(val)
+		L.Push(toLuaValue(L, val))
 		return 1
 	}))
-}
-
-func decodeJSON(L *lua.LState, s string) (lua.LValue, error) {
-	var val interface{}
-	if err := json.Unmarshal([]byte(s), &val); err != nil {
-		return lua.LNil, err
-	}
-	return toLuaValue(L, val), nil
 }
 
 func toLuaValue(L *lua.LState, v interface{}) lua.LValue {

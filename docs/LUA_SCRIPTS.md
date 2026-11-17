@@ -1,109 +1,102 @@
-# Lua Scripts Guide
+# Lua site scripts
 
-This document explains how to create Lua extraction scripts for websites.
-Scripts are stored in the application config directory under `scripts/`.
+A site script adapts extraction (`pkg/extractor`, on `pkg/webextract`) to one
+site. Scripts live in the config directory under `scripts/`
+(`~/.config/wails-cast/scripts/` on Linux,
+`~/Library/Application Support/wails-cast/scripts/` on macOS); the extractor
+uses the first whose `match_patterns` matches the page.
 
-Each script declares which URLs it handles via the `match_patterns` table.
-The extractor scans all `.lua` files and checks `match_patterns` to find
-the right script for a given URL.
+A page with a script loads hidden and must reach its stream by itself. A page
+without one opens in a window for someone to click play, and only from the
+machine running the app.
 
-## Script Structure
+## Format
+
+Every global is optional except `match_patterns`.
 
 ```lua
--- Websites this script applies to (supports * wildcards)
+-- Pages this script handles. * is a wildcard; a pattern is tried against the
+-- full URL and against host+path without "www.".
 match_patterns = {
   "example.com/*",
-  "sub.example.com/*",
+  "example.*/*",          -- any TLD
 }
 
--- Optional: URLs containing these substrings will be blocked
--- (their response is replaced with an empty JS file)
+-- URL substrings never loaded: anti-debugger, pop-under and ad scripts.
 block_urls = {
-  "some-script.js",
-  "another-tracker",
+  "disable-devtool",
 }
 
--- Optional: URLs matching these patterns are intercepted.
--- The response body is passed to `handler` which should return
--- the HLS manifest URL, or nil.
+-- CSS selectors clicked, in any frame, once each appears after its frame has
+-- loaded. The click is element.click(), so it must hit the element whose
+-- handler starts playback, not an overlay with pointer-events: none.
+click = { ".play-overlay img" }
+
+-- For a stream URL the page never requests itself: response bodies and frame
+-- HTML whose URL contains pattern go to handler, which returns the stream
+-- URL (relative is fine) or nil.
 intercepts = {
   {
-    pattern = "/api/video",
+    pattern = "/api/source",
     handler = function(url, body)
       local data = json_decode(body)
-      if data and data.url then
-        return data.url
+      if data and data.file then
+        return data.file
       end
       return nil
     end
   }
 }
-
--- Called after the page loads. Use this to interact with the page
--- (click play buttons, close overlays, wait for elements).
-function on_ready()
-  wait_element("#play-button", 15)
-  scroll_into_view("#play-button")
-  sleep(1)
-  click("#play-button")
-end
 ```
 
-## Available Lua Functions
+Handlers may call `log(text)` and `json_decode(text)` (nil plus an error on
+bad JSON).
 
-### `wait_element(selector, timeout)`
-Wait for an element to appear. `selector` is a CSS selector.
-`timeout` is max seconds to wait (default 10).
+## What the extractor does
 
-### `click(selector)`
-Perform a trusted mouse click at the element's center.
+`capture.js` runs in every frame, cross-origin players included, and reports
+every HLS playlist (recognised by content, so `.txt` and `.png` disguises
+don't matter) and WebVTT subtitle the page loads. Most sites need only a
+`click`: the player then requests its playlist and the extractor sees it.
+`intercepts` are for players that fail to play, or sites that hand the URL
+over in an API response. There is no need to navigate into a player iframe.
 
-### `scroll_into_view(selector)`
-Scroll the page so the element is centered in the viewport.
+The stream is the master playlist when one loads, else an intercepted URL,
+else the first media playlist. Requests for it replay the requesting frame
+as `Referer` (and `Origin` when cross-origin), the browser's User-Agent and
+its cookies for the stream URL.
 
-### `sleep(seconds)`
-Wait for N seconds.
+## Writing one
 
-### `log(message)`
-Print a message (appears in the extractor console output).
+1. Run the extractor without a script: it opens the page and prints every
+   frame, playlist and subtitle it sees.
 
-### `js(code)`
-Evaluate JavaScript on the page. The code should be a function
-expression like `() => { ... }` so it gets called automatically.
+   ```bash
+   go run ./cmd/extract "https://example.com/film/"
+   ```
 
-### `json_decode(string)`
-Parse JSON into a Lua table.
+   Click play by hand and note which frame requested the playlist. If it
+   was found, a script only needs to automate the click.
+2. Find the element that starts playback: the frame's HTML (`curl` the frame
+   URL from the trace with its parent as Referer) or the browser's inspector.
+   If the click lands on an element with `pointer-events: none`, target the
+   child or parent that has the handler.
+3. Save the script and run the same command: it reports `Found Lua script`,
+   each `click`, and what was found.
+4. Check that the stream survives the cast pipeline (segment download,
+   transcode): `-segments <dir>` writes the playlists a Chromecast would get
+   and the first segment of each track.
 
-## How It Works
+   ```bash
+   go run ./cmd/extract -segments ./out "https://example.com/film/"
+   ffprobe out/video_segment_0.ts
+   ```
 
-1. The extractor launches a **headless** browser
-2. It blocks matching URLs in `block_urls`
-3. It intercepts matching URLs in `intercepts`, fetches them with
-   Go's HTTP client, and calls the Lua `handler` with the response body
-4. A CDP listener watches all network responses for HLS Content-Type
-5. It navigates to the page and calls `on_ready()`
-6. It waits for an HLS URL to be found (from an intercept handler
-   or the CDP listener)
-7. It fetches the HLS manifest and returns
+## When it fails
 
-## HLS Detection
-
-HLS manifests can be detected two ways:
-
-- **CDP listener** (automatic): Catches any response with
-  `Content-Type: application/vnd.apple.mpegurl` or `application/x-mpegURL`.
-  No Lua code needed — just make the video start playing.
-
-- **Intercept handler** (manual): Use when the HLS URL is embedded in
-  a JSON or other response. The handler returns the URL string.
-
-## Tips
-
-- **Probe first**: Navigate the site manually (use a temporary Go script)
-  to find selectors, click targets, and network patterns.
-- **pointer-events:none**: Some sites use this CSS to block clicks.
-  `click()` dispatches a trusted mouse event that bypasses it.
-- **Scroll first**: Many players are below the fold.
-  Always `scroll_into_view` before `click`.
-- **Wait after click**: After clicking, the video may load in an iframe.
-  The CDP listener will find it automatically.
+- No `Found Lua script`: `match_patterns` doesn't match the URL.
+- `no HLS stream ... deadline exceeded`: the trace shows whether the click
+  ran (`click` lines) and which frames loaded. A frame that never appears is
+  often blocked by a `block_urls` entry or waits for a different click.
+- `loading ...: status code 403/404`: the CDN refused Go's request with the
+  replayed headers. fastplay.mom refuses every client but the browser.

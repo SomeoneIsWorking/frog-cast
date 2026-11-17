@@ -1,6 +1,6 @@
-// Runs at document start in every frame of a page loaded in a plain WebView
-// (no devtools) and reports the page's HLS stream, subtitles and anything a
-// site rule asks for to the host. The host prepends `const config = {...};`.
+// Runs at document start in every frame of a page loaded in a WebView and
+// reports the page's HLS stream, subtitles and the bodies a site rule asks
+// for to the host. The host prepends `const config = {click, intercept};`.
 (() => {
   "use strict";
   if (window.__castCapture) {
@@ -11,6 +11,7 @@
   // Keep references before page scripts run: they may replace globals.
   const webkitHandler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cast;
   const androidBridge = window.CastBridge;
+  const cdpBinding = window.__castPost;
   const stringify = JSON.stringify.bind(JSON);
   const origFetch = window.fetch;
   const xhrOpen = XMLHttpRequest.prototype.open;
@@ -26,6 +27,8 @@
         webkitHandler.postMessage(text);
       } else if (androidBridge) {
         androidBridge.postMessage(text);
+      } else if (cdpBinding) {
+        cdpBinding(text);
       }
     } catch (e) {
       // The host went away; nothing to report to.
@@ -70,13 +73,14 @@
       const name = new URL(url).pathname.split("/").pop() || "";
       report("subtitle", url, { label: name.replace(/\.vtt$/i, ""), body });
     }
-    for (const rule of config.bodyRules || []) {
-      if (url.includes(rule.url)) {
-        const match = new RegExp(rule.regex).exec(body || "");
-        if (match && match[1]) {
-          report("manifestUrl", absolute(match[1]));
-        }
-      }
+    intercepted(url, body);
+  };
+
+  // A site rule's handler looks for the stream in these bodies: API
+  // responses, and the HTML of frames whose own player can't play it.
+  const intercepted = (url, body) => {
+    if (body && (config.intercept || []).some((pattern) => url.includes(pattern))) {
+      report("body", url, { body });
     }
   };
 
@@ -139,15 +143,20 @@
   // Site rules: elements to click as they appear (play overlays), and inline
   // script text holding the stream URL.
   const clicked = new WeakSet();
-  // Clicks wait for the frame's scripts to have run and bound their handlers.
+  // Clicks wait for the frame's scripts to have run and bound their handlers:
+  // a second after load, or three after the DOM if slow ads hold load back.
   let loaded = false;
+  const startClicking = () => {
+    if (!loaded) {
+      loaded = true;
+      act();
+    }
+  };
   window.addEventListener("load", () => {
     post({ type: "frame", title: document.title });
+    setTimeoutRef(startClicking, 1000);
   });
-  window.addEventListener("load", () => setTimeoutRef(() => {
-    loaded = true;
-    act();
-  }, 1000));
+  document.addEventListener("DOMContentLoaded", () => setTimeoutRef(startClicking, 3000));
   const act = () => {
     for (const selector of loaded ? config.click || [] : []) {
       for (const el of document.querySelectorAll(selector)) {
@@ -160,17 +169,6 @@
         }
       }
     }
-    for (const rule of config.inlineRules || []) {
-      if (!location.href.includes(rule.url)) {
-        continue;
-      }
-      for (const script of document.scripts) {
-        const match = new RegExp(rule.regex).exec(script.textContent || "");
-        if (match && match[1]) {
-          report("manifestUrl", absolute(match[1]));
-        }
-      }
-    }
     // Nobody scrolls this view: a lazy player frame would never load.
     for (const frame of document.querySelectorAll('iframe[loading="lazy"]')) {
       frame.loading = "eager";
@@ -180,6 +178,9 @@
     }
   };
   new MutationObserver(act).observe(document, { childList: true, subtree: true });
-  document.addEventListener("DOMContentLoaded", act);
+  document.addEventListener("DOMContentLoaded", () => {
+    intercepted(location.href, document.documentElement.outerHTML);
+    act();
+  });
   post({ type: "frame", title: document.title });
 })();

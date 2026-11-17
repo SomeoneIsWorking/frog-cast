@@ -22,9 +22,9 @@ A UI panel in the application for managing Lua extraction scripts.
 │ ┌──────┐ │  Status: Enabled                  │
 │ │example│ │                                   │
 │ │site2  │ │  block_urls = { ... }            │
-│ │       │ │  function on_ready()             │
-│ │       │ │    ...                            │
-│ │       │ │  end                             │
+│ │       │ │  click = { ".play" }             │
+│ │       │ │                                   │
+│ │       │ │                                   │
 │ │       │ │                                   │
 │ └──────┘ │  [Save]  [Disable]  [Delete]      │
 │          │                                   │

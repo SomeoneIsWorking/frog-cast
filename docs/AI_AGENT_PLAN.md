@@ -12,7 +12,7 @@ User enters URL
 ┌──────────────────┐
 │ 1. Probe Phase   │
 │ - Open headful    │
-│   browser (rod)   │
+│   window          │
 │ - Navigate to URL │
 │ - Log all network │
 │   requests        │
@@ -91,7 +91,7 @@ The agent writes the Lua script based on what it learned:
 
 - `block_urls`: Any scripts that seemed to interfere (anti-bot, etc.)
 - `intercepts`: Any JSON APIs that returned the HLS URL
-- `on_ready()`: The sequence of actions that successfully started playback
+- `click`: the elements whose clicks started playback
 
 The generated script is saved and tested automatically.
 

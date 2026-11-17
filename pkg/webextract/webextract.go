@@ -1,9 +1,11 @@
-// Package webextract finds a web page's HLS stream by loading it in a plain
-// WebView with capture.js injected into every frame: no devtools protocol,
-// so it runs where only a WebView exists and pages can't detect a debugger.
+// Package webextract finds a web page's HLS stream by loading it in a browser
+// engine with capture.js injected into every frame. On Linux the engine is a
+// WebKitGTK view (no devtools, no Chrome); elsewhere it is Chromium until a
+// native host exists. The same script runs in an Android WebView.
 package webextract
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -19,33 +21,31 @@ var captureJS string
 
 // Rules adapt extraction to a site.
 type Rules struct {
-	// Click lists selectors clicked as they appear in any frame (play overlays).
+	// Click lists selectors clicked once they appear in any frame (play
+	// overlays). The click goes to the element itself, so it must be the one
+	// that handles it.
 	Click []string `json:"click,omitempty"`
 	// Block lists URL substrings never loaded (anti-debugger and ad scripts).
 	Block []string `json:"-"`
-	// BodyRules find the stream URL in a response body (JSON, embed HTML).
-	BodyRules []TextRule `json:"bodyRules,omitempty"`
-	// InlineRules find it in the inline scripts of a frame.
-	InlineRules []TextRule `json:"inlineRules,omitempty"`
-}
-
-// TextRule applies Regex (group 1 is the URL) where the URL contains URL.
-type TextRule struct {
-	URL   string `json:"url"`
-	Regex string `json:"regex"`
+	// Intercept lists URL substrings whose response bodies, or frame HTML,
+	// go to Options.OnBody.
+	Intercept []string `json:"intercept,omitempty"`
 }
 
 // Options control one extraction.
 type Options struct {
 	// Visible shows the page in a window, for someone to click play.
 	Visible bool
+	// OnBody looks for the stream URL in an intercepted body; "" if it isn't
+	// there. It runs on the goroutine that called Extract.
+	OnBody func(url, body string) string
 	// Trace, when set, sees every message the page's frames report.
 	Trace func(Message)
 }
 
 // Message is what capture.js reports.
 type Message struct {
-	Type    string `json:"type"` // frame, manifest, manifestUrl, subtitle
+	Type    string `json:"type"` // frame, click, manifest, manifestUrl, subtitle, body
 	URL     string `json:"url"`
 	Frame   string `json:"frame"` // URL of the frame that made the request
 	Top     bool   `json:"top"`
@@ -63,7 +63,7 @@ type Subtitle struct {
 	Content string
 }
 
-// Result is a page's stream as the WebView found it.
+// Result is a page's stream as the browser found it.
 type Result struct {
 	ManifestURL string
 	Manifest    string
@@ -124,7 +124,7 @@ type collector struct {
 	firstSeen time.Time
 }
 
-func (c *collector) add(m Message) {
+func (c *collector) add(m Message, onBody func(url, body string) string) {
 	if m.Top && m.Title != "" {
 		c.title = m.Title
 	}
@@ -139,14 +139,37 @@ func (c *collector) add(m Message) {
 		if c.urlOnly == nil {
 			c.urlOnly = &m
 		}
+	case "body":
+		if onBody == nil || c.urlOnly != nil {
+			return
+		}
+		found := onBody(m.URL, m.Body)
+		if found == "" {
+			return
+		}
+		// The frame that received the body is the one that would request it.
+		c.urlOnly = &Message{Type: "manifestUrl", URL: resolve(m.URL, found), Frame: m.Frame}
 	case "subtitle":
 		c.subtitles = append(c.subtitles, Subtitle{URL: m.URL, Label: m.Label, Content: m.Body})
+		return
 	default:
 		return
 	}
-	if c.firstSeen.IsZero() && m.Type != "subtitle" {
+	if c.firstSeen.IsZero() && (c.master != nil || c.media != nil || c.urlOnly != nil) {
 		c.firstSeen = time.Now()
 	}
+}
+
+func resolve(base, ref string) string {
+	b, err := url.Parse(base)
+	if err != nil {
+		return ref
+	}
+	r, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+	return b.ResolveReference(r).String()
 }
 
 // settle is how long to keep listening after the first stream, for a master
@@ -155,14 +178,37 @@ const settle = 2 * time.Second
 
 // ready reports whether listening can stop.
 func (c *collector) ready(now time.Time) bool {
-	if c.master != nil {
+	if c.master != nil || c.urlOnly != nil {
 		return now.Sub(c.firstSeen) >= settle/2
 	}
 	return !c.firstSeen.IsZero() && now.Sub(c.firstSeen) >= settle
 }
 
-// pick is the stream to cast: a master playlist over a URL found in page
-// text over a media playlist.
+// listen collects messages until the stream is known or ctx ends.
+func listen(ctx context.Context, pageURL string, messages <-chan Message, opts Options) (*collector, error) {
+	c := &collector{}
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	for !c.ready(time.Now()) {
+		select {
+		case m := <-messages:
+			if opts.Trace != nil {
+				opts.Trace(m)
+			}
+			c.add(m, opts.OnBody)
+		case <-tick.C:
+		case <-ctx.Done():
+			if c.firstSeen.IsZero() {
+				return nil, fmt.Errorf("no HLS stream on %s: %w", pageURL, ctx.Err())
+			}
+			return c, nil
+		}
+	}
+	return c, nil
+}
+
+// pick is the stream to cast: a master playlist over a URL a site rule found
+// over a media playlist.
 func (c *collector) pick() *Message {
 	switch {
 	case c.master != nil:
@@ -172,14 +218,6 @@ func (c *collector) pick() *Message {
 	default:
 		return c.media
 	}
-}
-
-// streamURL is the picked stream's URL, or "".
-func (c *collector) streamURL() string {
-	if m := c.pick(); m != nil {
-		return m.URL
-	}
-	return ""
 }
 
 // result builds the Result, fetching the playlist when only its URL is known.

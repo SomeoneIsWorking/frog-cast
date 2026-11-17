@@ -252,7 +252,7 @@ func extractionFile(url string) string {
 }
 
 func (*RemoteManager) doExtraction(url *u.URL) (*ExtractionData, *hls.ManifestPlaylist, error) {
-	extraction, err := extractor.Extract(url.String())
+	extraction, err := extractor.Extract(url.String(), nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -266,7 +266,7 @@ func (*RemoteManager) doExtraction(url *u.URL) (*ExtractionData, *hls.ManifestPl
 		Cookies:     extraction.Cookies,
 		Headers:     extraction.Headers,
 		Title:       extraction.Title,
-		ManifestURL: url.ResolveReference(extraction.URL).String(),
+		ManifestURL: extraction.ManifestURL,
 	}
 	subtitles := make([]PageSubtitleContent, 0, len(extraction.Subtitles))
 	for _, sub := range extraction.Subtitles {
