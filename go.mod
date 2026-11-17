@@ -1,4 +1,4 @@
-module wails-cast
+module frog-cast
 
 go 1.24.0
 

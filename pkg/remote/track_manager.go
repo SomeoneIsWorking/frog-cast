@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"wails-cast/pkg/filehelper"
-	"wails-cast/pkg/hls"
-	"wails-cast/pkg/mix"
+	"frog-cast/pkg/filehelper"
+	"frog-cast/pkg/hls"
+	"frog-cast/pkg/mix"
 
 	"github.com/pkg/errors"
 )

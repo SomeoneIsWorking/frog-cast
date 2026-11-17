@@ -5,7 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"wails-cast/pkg/filehelper"
+	"frog-cast/pkg/filehelper"
 )
 
 // SubtitleEntry represents a single subtitle entry with timing information

@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 
-	"wails-cast/pkg/webextract"
+	"frog-cast/pkg/webextract"
 )
 
 // extractPage is only on Android; elsewhere cast from the instance's machine.

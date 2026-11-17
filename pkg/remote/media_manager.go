@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
-	"wails-cast/pkg/events"
-	"wails-cast/pkg/hls"
+	"frog-cast/pkg/events"
+	"frog-cast/pkg/hls"
 )
 
 type CacheProgress struct {

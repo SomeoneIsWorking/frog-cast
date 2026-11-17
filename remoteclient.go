@@ -1,7 +1,7 @@
 package main
 
 // Remote-client methods let this desktop instance act as a controller for
-// *another* wails-cast instance over its remote HTTP API. The actual HTTP
+// *another* frog-cast instance over its remote HTTP API. The actual HTTP
 // client and mDNS discovery live in pkg/remote so the Fyne mobile app can
 // share them.
 
@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"os"
 
-	"wails-cast/pkg/castapi"
-	"wails-cast/pkg/options"
-	"wails-cast/pkg/remote"
+	"frog-cast/pkg/castapi"
+	"frog-cast/pkg/options"
+	"frog-cast/pkg/remote"
 )
 
 type CastInstance = castapi.CastInstance

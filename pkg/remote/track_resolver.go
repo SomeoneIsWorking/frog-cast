@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
-	"wails-cast/pkg/cache"
-	"wails-cast/pkg/hls"
+	"frog-cast/pkg/cache"
+	"frog-cast/pkg/hls"
 )
 
 type TrackResolver struct {

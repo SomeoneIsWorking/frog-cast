@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"sync"
 	"time"
-	"wails-cast/pkg/events"
-	"wails-cast/pkg/inhibitor"
-	"wails-cast/pkg/options"
-	"wails-cast/pkg/stream"
+	"frog-cast/pkg/events"
+	"frog-cast/pkg/inhibitor"
+	"frog-cast/pkg/options"
+	"frog-cast/pkg/stream"
 )
 
 // Server is an HTTP server for serving media

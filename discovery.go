@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 	"time"
-	"wails-cast/pkg/events"
+	"frog-cast/pkg/events"
 
 	castdns "github.com/vishen/go-chromecast/dns"
 )

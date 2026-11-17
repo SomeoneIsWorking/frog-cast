@@ -2,8 +2,8 @@ package stream
 
 import (
 	"context"
-	"wails-cast/pkg/mix"
-	"wails-cast/pkg/options"
+	"frog-cast/pkg/mix"
+	"frog-cast/pkg/options"
 )
 
 // StreamHandler defines the interface for handling media streams

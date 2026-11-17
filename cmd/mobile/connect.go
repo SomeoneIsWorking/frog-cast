@@ -10,7 +10,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"wails-cast/pkg/castapi"
+	"frog-cast/pkg/castapi"
 )
 
 const (
@@ -127,7 +127,7 @@ func (u *ui) showConnect() {
 	manualForm := container.NewVBox(address, token, manual)
 	more := widget.NewAccordion(widget.NewAccordionItem("Connect by address", manualForm))
 
-	top := []fyne.CanvasObject{heading1("Cast Remote"), caption("Control wails-cast on your network")}
+	top := []fyne.CanvasObject{heading1("Frog Cast Remote"), caption("Control Frog Cast on your network")}
 	if last != "" {
 		again := widget.NewButtonWithIcon("Reconnect to "+lastName, theme.MediaPlayIcon(), func() { connect(lastName, last) })
 		again.Importance = widget.HighImportance

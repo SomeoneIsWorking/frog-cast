@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"wails-cast/pkg/events"
-	"wails-cast/pkg/folders"
-	"wails-cast/pkg/options"
+	"frog-cast/pkg/events"
+	"frog-cast/pkg/folders"
+	"frog-cast/pkg/options"
 )
 
 const (

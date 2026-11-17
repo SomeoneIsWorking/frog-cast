@@ -6,7 +6,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"wails-cast/pkg/castapi"
+	"frog-cast/pkg/castapi"
 )
 
 // session is the connected app: one instance, its cast targets and the tabs.

@@ -1,4 +1,4 @@
-package io.wailscast.webextract;
+package io.frogcast.webextract;
 
 import android.app.Activity;
 import android.app.Dialog;

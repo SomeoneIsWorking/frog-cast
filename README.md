@@ -1,4 +1,4 @@
-# Wails Cast
+# Frog Cast
 
 A desktop application for streaming media to Chromecast devices using Wails and Go.
 
@@ -22,8 +22,8 @@ A desktop application for streaming media to Chromecast devices using Wails and 
 
 1. Clone the repository (with submodules):
 ```bash
-git clone --recursive https://github.com/SomeoneIsWorking/wails-cast.git
-cd wails-cast
+git clone --recursive https://github.com/SomeoneIsWorking/frog-cast.git
+cd frog-cast
 ```
 
 2. Install dependencies:

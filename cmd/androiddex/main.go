@@ -65,7 +65,7 @@ func run() error {
 		"-d", classes, src); err != nil {
 		return err
 	}
-	bridgeClasses, err := filepath.Glob(filepath.Join(classes, "io", "wailscast", "webextract", "*.class"))
+	bridgeClasses, err := filepath.Glob(filepath.Join(classes, "io", "frogcast", "webextract", "*.class"))
 	if err != nil {
 		return err
 	}

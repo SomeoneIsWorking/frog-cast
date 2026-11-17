@@ -13,8 +13,8 @@ import (
 	"strings"
 	"text/template"
 
-	"wails-cast/pkg/events"
-	"wails-cast/pkg/subtitles"
+	"frog-cast/pkg/events"
+	"frog-cast/pkg/subtitles"
 )
 
 // TranslateOptions contains options for subtitle translation

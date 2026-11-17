@@ -21,11 +21,11 @@ import (
 	"strings"
 	"time"
 
-	"wails-cast/pkg/extractor"
-	"wails-cast/pkg/options"
-	"wails-cast/pkg/remote"
-	"wails-cast/pkg/stream"
-	"wails-cast/pkg/webextract"
+	"frog-cast/pkg/extractor"
+	"frog-cast/pkg/options"
+	"frog-cast/pkg/remote"
+	"frog-cast/pkg/stream"
+	"frog-cast/pkg/webextract"
 )
 
 // The WebKit host's main loop runs on the main thread.

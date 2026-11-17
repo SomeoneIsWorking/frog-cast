@@ -18,16 +18,16 @@ import (
 	"github.com/vishen/go-chromecast/application"
 	cast_proto "github.com/vishen/go-chromecast/cast/proto"
 
-	"wails-cast/pkg/castapi"
-	"wails-cast/pkg/folders"
-	"wails-cast/pkg/options"
-	"wails-cast/pkg/remote"
+	"frog-cast/pkg/castapi"
+	"frog-cast/pkg/folders"
+	"frog-cast/pkg/options"
+	"frog-cast/pkg/remote"
 )
 
 // TestMain points the config and cache directories at a temp dir so tests
 // never touch the user's history, settings or transcode cache.
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "wails-cast-test")
+	dir, err := os.MkdirTemp("", "frog-cast-test")
 	if err != nil {
 		panic(err)
 	}

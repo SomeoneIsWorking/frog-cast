@@ -1,4 +1,4 @@
-// Command mobile is the phone remote for a wails-cast instance on the LAN.
+// Command mobile is the phone remote for a frog-cast instance on the LAN.
 package main
 
 import (
@@ -7,11 +7,11 @@ import (
 	"fyne.io/fyne/v2/dialog"
 )
 
-const appID = "io.wailscast.remote"
+const appID = "io.frogcast.remote"
 
 func main() {
 	a := app.NewWithID(appID)
-	w := a.NewWindow("Cast Remote")
+	w := a.NewWindow("Frog Cast Remote")
 	w.Resize(fyne.NewSize(400, 820))
 
 	u := &ui{fyneApp: a, window: w}

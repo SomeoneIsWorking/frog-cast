@@ -1,6 +1,6 @@
-# wails-cast mobile companion
+# Frog Cast Remote
 
-A Fyne v2 remote for a wails-cast instance on the LAN (`cmd/mobile`). It uses
+A Fyne v2 remote for a frog-cast instance on the LAN (`cmd/mobile`). It uses
 the shared `pkg/castapi` client (mDNS discovery and the HTTP API) that the
 desktop app also uses.
 
@@ -27,15 +27,15 @@ go install fyne.io/tools/cmd/fyne@v1.7.4
 export ANDROID_HOME=<sdk> ANDROID_NDK_HOME=<sdk>/ndk/<version>
 go generate ./pkg/webextract   # the WebView bridge (needs a JDK)
 cd cmd/mobile
-fyne package -os android/arm64 --app-id io.wailscast.remote --name "Cast Remote" --icon ../../build/appicon.png
-adb install -r Cast_Remote.apk
+fyne package -os android/arm64 --app-id io.frogcast.remote --name "Frog Cast Remote" --icon ../../build/appicon.png
+adb install -r Frog_Cast_Remote.apk
 ```
 
 `-os android` builds every ABI (about 130 MB); `android/arm64` is enough for
 current phones. The APK is debug-signed; pass `--release` and sign it with
 `apksigner` for a release.
 
-iOS (macOS + Xcode): `fyne package -os ios --app-id io.wailscast.remote --icon ../../build/appicon.png`.
+iOS (macOS + Xcode): `fyne package -os ios --app-id io.frogcast.remote --icon ../../build/appicon.png`.
 
 The launcher icon is the desktop app's (`build/appicon.png`).
 

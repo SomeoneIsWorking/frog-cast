@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build wails-cast and install it into /Applications.
+# Build frog-cast and install it into /Applications.
 set -euo pipefail
 
-APP_NAME="wails-cast.app"
+APP_NAME="frog-cast.app"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILT_APP="$SCRIPT_DIR/build/bin/$APP_NAME"
 DEST="/Applications/$APP_NAME"
@@ -18,8 +18,8 @@ if [ ! -d "$BUILT_APP" ]; then
 fi
 
 # Quit only the installed app, via a normal macOS Quit, not a name match that
-# could also hit a dev build or anything else called wails-cast.
-INSTALLED_BIN="$DEST/Contents/MacOS/wails-cast"
+# could also hit a dev build or anything else called frog-cast.
+INSTALLED_BIN="$DEST/Contents/MacOS/frog-cast"
 WAS_RUNNING=0
 if pgrep -fx "$INSTALLED_BIN" >/dev/null; then
   WAS_RUNNING=1

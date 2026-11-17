@@ -1,8 +1,8 @@
 package main
 
 import (
-	"wails-cast/pkg/castapi"
-	"wails-cast/pkg/remote"
+	"frog-cast/pkg/castapi"
+	"frog-cast/pkg/remote"
 )
 
 type SubtitleDisplayItem = castapi.SubtitleDisplayItem

@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
-	"wails-cast/pkg/execresolver"
-	_logger "wails-cast/pkg/logger"
+	"frog-cast/pkg/execresolver"
+	_logger "frog-cast/pkg/logger"
 )
 
 var InhibitorInstance = &Inhibitor{}
@@ -44,7 +44,7 @@ func startInhibitor() (*exec.Cmd, error) {
 	case "linux":
 		// Linux: try systemd-inhibit (systemd), then fallback to xdg-screensaver
 		if systemdPath, exists := execresolver.FindWithCheck("systemd-inhibit"); exists {
-			cmd = exec.Command(systemdPath, "--what=idle:sleep", "--who=wails-cast", "--why=Streaming media", "--mode=block", "sleep", "1")
+			cmd = exec.Command(systemdPath, "--what=idle:sleep", "--who=frog-cast", "--why=Streaming media", "--mode=block", "sleep", "1")
 		} else if xdgPath, exists := execresolver.FindWithCheck("xdg-screensaver"); exists {
 			cmd = exec.Command(xdgPath, "suspend", fmt.Sprintf("%d", os.Getpid()))
 		}

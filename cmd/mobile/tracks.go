@@ -11,8 +11,8 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"wails-cast/pkg/castapi"
-	"wails-cast/pkg/options"
+	"frog-cast/pkg/castapi"
+	"frog-cast/pkg/options"
 )
 
 // Transcode qualities: "" plays the original stream.

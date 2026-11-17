@@ -1,7 +1,7 @@
 import { ref } from "vue";
 
 // A "source" is where library media + playback live: this machine (local) or a
-// discovered remote wails-cast instance reached over its HTTP API. The app shows
+// discovered remote frog-cast instance reached over its HTTP API. The app shows
 // every source's library and lets you play from any of them; the SAME local UI
 // drives both — only the backend target changes (VSCode-Remote style).
 

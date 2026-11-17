@@ -63,7 +63,7 @@ static char *load_bridge(uintptr_t envp, uintptr_t ctx, void *dex, int len) {
 	}
 	jclass class_loader = (*env)->FindClass(env, "java/lang/ClassLoader");
 	jmethodID load_class = (*env)->GetMethodID(env, class_loader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
-	jstring name = (*env)->NewStringUTF(env, "io.wailscast.webextract.Bridge");
+	jstring name = (*env)->NewStringUTF(env, "io.frogcast.webextract.Bridge");
 	jobject cls = (*env)->CallObjectMethod(env, loader, load_class, name);
 	if ((err = take_exception(env))) {
 		return err;

@@ -47,15 +47,15 @@ import (
 
 	"github.com/grandcat/zeroconf"
 
-	"wails-cast/pkg/castapi"
-	"wails-cast/pkg/events"
-	"wails-cast/pkg/options"
-	"wails-cast/pkg/remote"
+	"frog-cast/pkg/castapi"
+	"frog-cast/pkg/events"
+	"frog-cast/pkg/options"
+	"frog-cast/pkg/remote"
 )
 
 // mdnsService is the mDNS/Bonjour service type the desktop advertises so the
 // companion app can discover it automatically on the LAN.
-const mdnsService = "_wailscast._tcp"
+const mdnsService = "_frogcast._tcp"
 
 // ----------------------------------------------------------------------------
 // Library abstraction (consumed by /library)
@@ -277,12 +277,12 @@ func (h *HTTPServer) Start(port int) error {
 	return nil
 }
 
-// hostnameOrDefault returns the OS hostname, falling back to "wails-cast".
+// hostnameOrDefault returns the OS hostname, falling back to "frog-cast".
 func hostnameOrDefault() string {
 	if h, err := os.Hostname(); err == nil && h != "" {
 		return h
 	}
-	return "wails-cast"
+	return "frog-cast"
 }
 
 // startMDNS advertises the remote API over mDNS. On macOS it registers through
@@ -292,7 +292,7 @@ func hostnameOrDefault() string {
 func (h *HTTPServer) startMDNS(instance string, port int) {
 	if runtime.GOOS == "darwin" {
 		if path, err := exec.LookPath("dns-sd"); err == nil {
-			cmd := exec.Command(path, "-R", instance, mdnsService, "local", strconv.Itoa(port), "app=wails-cast")
+			cmd := exec.Command(path, "-R", instance, mdnsService, "local", strconv.Itoa(port), "app=frog-cast")
 			if err := cmd.Start(); err != nil {
 				logger.Warn("Remote API: dns-sd register failed", "error", err)
 			} else {
@@ -302,7 +302,7 @@ func (h *HTTPServer) startMDNS(instance string, port int) {
 			return
 		}
 	}
-	if mdns, err := zeroconf.Register(instance, mdnsService, "local.", port, []string{"app=wails-cast"}, nil); err != nil {
+	if mdns, err := zeroconf.Register(instance, mdnsService, "local.", port, []string{"app=frog-cast"}, nil); err != nil {
 		logger.Warn("Remote API: mDNS advertisement failed", "error", err)
 	} else {
 		h.mdns = mdns
@@ -397,7 +397,7 @@ func (h *HTTPServer) handlePing(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, pingResponse{
 		OK:        true,
-		AppName:   "wails-cast",
+		AppName:   "frog-cast",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	})
 }

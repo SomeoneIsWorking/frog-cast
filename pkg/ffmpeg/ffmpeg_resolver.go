@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"wails-cast/pkg/execresolver"
+	"frog-cast/pkg/execresolver"
 )
 
 var (

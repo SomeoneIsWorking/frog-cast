@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"wails-cast/pkg/filehelper"
-	"wails-cast/pkg/mix"
+	"frog-cast/pkg/filehelper"
+	"frog-cast/pkg/mix"
 )
 
 func TestProcessSubtitlesLeavesTheLinkedSourceAlone(t *testing.T) {

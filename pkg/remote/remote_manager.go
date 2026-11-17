@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"wails-cast/pkg/extractor"
-	"wails-cast/pkg/filehelper"
-	"wails-cast/pkg/folders"
-	"wails-cast/pkg/hls"
+	"frog-cast/pkg/extractor"
+	"frog-cast/pkg/filehelper"
+	"frog-cast/pkg/folders"
+	"frog-cast/pkg/hls"
 )
 
 type RemoteManager struct {

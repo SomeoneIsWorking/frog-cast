@@ -2,7 +2,7 @@ package cache
 
 import (
 	"os"
-	"wails-cast/pkg/filehelper"
+	"frog-cast/pkg/filehelper"
 )
 
 func GetJson[T any](path string, fn func() (*T, error)) (*T, error) {

@@ -7,7 +7,7 @@ import (
 
 	"fyne.io/fyne/v2/driver"
 
-	"wails-cast/pkg/webextract"
+	"frog-cast/pkg/webextract"
 )
 
 // extractPage shows the page over the app until it plays a stream.

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"wails-cast/pkg/ffmpeg"
-	"wails-cast/pkg/folders"
+	"frog-cast/pkg/ffmpeg"
+	"frog-cast/pkg/folders"
 )
 
 // Request bundles parameters for prompt generation, pasted processing and translation

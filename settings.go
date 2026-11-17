@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"wails-cast/pkg/folders"
+	"frog-cast/pkg/folders"
 )
 
 const (

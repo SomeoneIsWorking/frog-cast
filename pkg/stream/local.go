@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"time"
 
-	"wails-cast/pkg/ffmpeg"
-	"wails-cast/pkg/filehelper"
-	"wails-cast/pkg/folders"
-	"wails-cast/pkg/hls"
-	"wails-cast/pkg/mix"
-	"wails-cast/pkg/options"
-	"wails-cast/pkg/urlhelper"
+	"frog-cast/pkg/ffmpeg"
+	"frog-cast/pkg/filehelper"
+	"frog-cast/pkg/folders"
+	"frog-cast/pkg/hls"
+	"frog-cast/pkg/mix"
+	"frog-cast/pkg/options"
+	"frog-cast/pkg/urlhelper"
 )
 
 // LocalHandler represents a local file HLS streaming server

@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	appName = "wails-cast"
+	appName = "frog-cast"
 )
 
 // GetConfig returns the application config directory path

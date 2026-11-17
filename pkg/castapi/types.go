@@ -1,6 +1,6 @@
 package castapi
 
-// CastInstance is a wails-cast instance discovered on the LAN over mDNS.
+// CastInstance is a frog-cast instance discovered on the LAN over mDNS.
 type CastInstance struct {
 	Name string `json:"name"`
 	Host string `json:"host"`

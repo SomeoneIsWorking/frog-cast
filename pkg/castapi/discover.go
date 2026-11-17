@@ -12,13 +12,13 @@ import (
 )
 
 const (
-	service      = "_wailscast._tcp.local."
+	service      = "_frogcast._tcp.local."
 	browseWindow = 3 * time.Second
 )
 
 var mdnsGroup = &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
 
-// Discover finds wails-cast instances on the LAN. It sends one-shot mDNS
+// Discover finds frog-cast instances on the LAN. It sends one-shot mDNS
 // queries from an ephemeral port, which responders answer by unicast
 // (RFC 6762 §6.7). That needs no interface list and no multicast lock, which
 // Android denies to apps.
@@ -172,7 +172,7 @@ func reachable(addrs []net.IP, sender net.IP) net.IP {
 	return nil
 }
 
-// instanceName is the human part of "<name>._wailscast._tcp.local.", with
+// instanceName is the human part of "<name>._frogcast._tcp.local.", with
 // DNS escapes undone.
 func instanceName(instance string) string {
 	name := strings.TrimSuffix(instance, "."+service)

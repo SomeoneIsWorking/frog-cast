@@ -2,8 +2,8 @@
 
 A site script adapts extraction (`pkg/extractor`, on `pkg/webextract`) to one
 site. Scripts live in the config directory under `scripts/`
-(`~/.config/wails-cast/scripts/` on Linux,
-`~/Library/Application Support/wails-cast/scripts/` on macOS); the extractor
+(`~/.config/frog-cast/scripts/` on Linux,
+`~/Library/Application Support/frog-cast/scripts/` on macOS); the extractor
 uses the first whose `match_patterns` matches the page.
 
 A page with a script loads hidden and must reach its stream by itself. A page

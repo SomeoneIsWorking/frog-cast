@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/template"
 
-	"wails-cast/pkg/subtitles"
+	"frog-cast/pkg/subtitles"
 )
 
 // GeneratePromptFromSubtitles builds the prompt text from exported subtitle files

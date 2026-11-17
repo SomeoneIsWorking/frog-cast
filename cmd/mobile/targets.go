@@ -4,7 +4,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
 
-	"wails-cast/pkg/castapi"
+	"frog-cast/pkg/castapi"
 )
 
 const prefTarget = "castTarget"

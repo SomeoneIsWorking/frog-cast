@@ -10,7 +10,7 @@ const store = useCastStore();
     <div class="container mx-auto px-4 max-w-6xl">
       <div class="flex items-center justify-between text-xs text-gray-500">
         <div class="flex items-center gap-2">
-          <span>© 2025 Wails Cast</span>
+          <span>© 2025 Frog Cast</span>
         </div>
         
         <!-- FFmpeg Status -->

@@ -3,7 +3,7 @@
 ## Comparison baseline
 
 The baseline is manually combining local media browsing, download/extraction tools, transcoding,
-subtitle utilities, and a separate Chromecast controller. Wails Cast intends one desktop workflow for
+subtitle utilities, and a separate Chromecast controller. Frog Cast intends one desktop workflow for
 library management, media preparation, subtitles, casting, durable background work, and authenticated
 companion control.
 
@@ -73,7 +73,7 @@ Gap: full-library migration, conflict, and partial-failure behavior remains unve
 ### S006 — Companion API
 
 The configurable API uses token authentication, mDNS advertisement, and routes for the documented remote
-operations consumed by WailsCast Remote.
+operations consumed by Frog Cast Remote.
 
 Gap: the authentication and endpoint set lacks a canonical positive/negative protocol gate.
 

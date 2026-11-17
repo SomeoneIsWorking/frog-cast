@@ -25,8 +25,8 @@ import (
 
 	lua "github.com/yuin/gopher-lua"
 
-	"wails-cast/pkg/folders"
-	"wails-cast/pkg/webextract"
+	"frog-cast/pkg/folders"
+	"frog-cast/pkg/webextract"
 )
 
 const (

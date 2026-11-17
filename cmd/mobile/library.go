@@ -10,7 +10,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"wails-cast/pkg/castapi"
+	"frog-cast/pkg/castapi"
 )
 
 // libraryView browses the instance's library: shows, then seasons, then

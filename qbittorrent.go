@@ -1,7 +1,7 @@
 package main
 
 // Minimal qBittorrent Web API (v2) client used by the remote API's /torrent/*
-// endpoints. It supports just what wails-cast needs: log in, add a magnet link,
+// endpoints. It supports just what frog-cast needs: log in, add a magnet link,
 // and list torrents with their download progress.
 //
 // The client keeps a session cookie (SID) and transparently re-authenticates
@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"wails-cast/pkg/castapi"
+	"frog-cast/pkg/castapi"
 )
 
 // TorrentStatus is the subset of a qBittorrent torrent we expose to clients.

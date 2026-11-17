@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"wails-cast/pkg/hls"
-	"wails-cast/pkg/logger"
-	"wails-cast/pkg/mix"
+	"frog-cast/pkg/hls"
+	"frog-cast/pkg/logger"
+	"frog-cast/pkg/mix"
 
 	"github.com/pkg/errors"
 )

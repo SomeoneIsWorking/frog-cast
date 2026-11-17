@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"wails-cast/pkg/mix"
-	"wails-cast/pkg/subtitles"
+	"frog-cast/pkg/mix"
+	"frog-cast/pkg/subtitles"
 )
 
 func GetEmbeddedIndex(subtitlePath string) (int, bool) {

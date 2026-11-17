@@ -93,7 +93,7 @@ export const useCastStore = defineStore("cast", () => {
     }, 2000);
   };
 
-  // attachToRemotePlayback looks for another wails-cast instance on the LAN
+  // attachToRemotePlayback looks for another frog-cast instance on the LAN
   // that is already casting and, if this machine is idle, takes over its
   // controls (pause/seek/volume/stop route to it). Read-only until the user
   // presses a control, so it never disturbs what is playing.

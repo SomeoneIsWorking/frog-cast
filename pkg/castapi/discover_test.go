@@ -11,7 +11,7 @@ import (
 
 // The desktop advertises with zeroconf; a unicast browse must find it.
 func TestDiscoverFindsAZeroconfAdvertisement(t *testing.T) {
-	server, err := zeroconf.Register("test instance", "_wailscast._tcp", "local.", 45123, []string{"app=wails-cast"}, nil)
+	server, err := zeroconf.Register("test instance", "_frogcast._tcp", "local.", 45123, []string{"app=frog-cast"}, nil)
 	if err != nil {
 		t.Skipf("can't advertise here: %v", err)
 	}

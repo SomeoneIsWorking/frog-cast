@@ -1,5 +1,5 @@
 // Package remote provides a LAN HTTP client and mDNS discovery for talking to
-// a wails-cast instance's remote API. It is shared by the desktop app (to act
+// a frog-cast instance's remote API. It is shared by the desktop app (to act
 // as a controller for another instance) and the Fyne mobile companion app.
 package castapi
 
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"wails-cast/pkg/options"
+	"frog-cast/pkg/options"
 )
 
 // ErrNeedsExtraction: the instance can't extract the page without a browser

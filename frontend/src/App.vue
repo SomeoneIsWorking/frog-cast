@@ -43,7 +43,7 @@ const selectDevice = (device: any) => {
             <h1
               class="text-4xl font-bold bg-linear-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent"
             >
-              Wails Cast
+              Frog Cast
             </h1>
           </div>
           <div class="flex gap-2">

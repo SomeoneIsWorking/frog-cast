@@ -3,7 +3,7 @@ package ffmpeg
 import (
 	"encoding/json"
 	"os"
-	"wails-cast/pkg/options"
+	"frog-cast/pkg/options"
 )
 
 // Save saves manifest JSON for a segment (used by local file HLS)

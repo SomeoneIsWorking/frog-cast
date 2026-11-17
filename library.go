@@ -14,9 +14,9 @@ import (
 
 	wails_runtime "github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"wails-cast/pkg/ai"
-	"wails-cast/pkg/events"
-	"wails-cast/pkg/castapi"
+	"frog-cast/pkg/ai"
+	"frog-cast/pkg/events"
+	"frog-cast/pkg/castapi"
 )
 
 // ─── Organize types ──────────────────────────────────────────────────────────
