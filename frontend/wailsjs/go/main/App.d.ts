@@ -99,6 +99,8 @@ export function RemotePing(arg1:string,arg2:string):Promise<boolean>;
 
 export function RemotePlay(arg1:string,arg2:string,arg3:string,arg4:string,arg5:castapi.PlayOptions):Promise<castapi.PlaybackState>;
 
+export function RemotePlayExtracted(arg1:string,arg2:string,arg3:string,arg4:string,arg5:castapi.PlayOptions):Promise<castapi.PlaybackState>;
+
 export function RemoteSeasonCancel(arg1:string,arg2:string):Promise<void>;
 
 export function RemoteSeasonStatus(arg1:string,arg2:string):Promise<castapi.SeasonTranslateProgress>;

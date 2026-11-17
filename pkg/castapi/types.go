@@ -206,4 +206,25 @@ type PlayResponse struct {
 
 type ErrorResponse struct {
 	Error string `json:"error"`
+	// NeedsExtraction: the page has to be extracted in a browser someone can
+	// see first; send it with /play-extracted from a controller that can.
+	NeedsExtraction bool `json:"needsExtraction,omitempty"`
+}
+
+// ExtractedPage is a web page's stream as a controller's browser found it,
+// sent with POST /play-extracted.
+type ExtractedPage struct {
+	PageURL     string            `json:"pageUrl"`
+	Title       string            `json:"title"`
+	ManifestURL string            `json:"manifestUrl"` // absolute
+	Manifest    string            `json:"manifest"`
+	Headers     map[string]string `json:"headers"`
+	Cookies     map[string]string `json:"cookies"`
+}
+
+// PlayExtractedRequest is the body of POST /play-extracted.
+type PlayExtractedRequest struct {
+	Page     ExtractedPage `json:"page"`
+	DeviceIP string        `json:"deviceIp"` // "local" = the instance itself
+	PlayOptions
 }

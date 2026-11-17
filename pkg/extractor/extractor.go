@@ -362,6 +362,12 @@ func requestHeader(req *rod.HijackRequest, key string) string {
 	return ""
 }
 
+// HasScript reports whether a Lua script matches the page, so extracting it
+// runs headless instead of in a visible browser that waits for a click.
+func HasScript(pageURL string) bool {
+	return findScript(pageURL) != ""
+}
+
 // findScript scans all Lua scripts for match_patterns matching the URL.
 func findScript(pageURL string) string {
 	scriptsDir := filepath.Join(folders.GetConfig(), "scripts")

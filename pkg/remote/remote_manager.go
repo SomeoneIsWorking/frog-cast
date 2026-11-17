@@ -1,9 +1,11 @@
 package remote
 
 import (
+	"fmt"
 	u "net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"wails-cast/pkg/extractor"
 	"wails-cast/pkg/filehelper"
 	"wails-cast/pkg/folders"
@@ -11,6 +13,7 @@ import (
 )
 
 type RemoteManager struct {
+	mu    sync.Mutex // guards items
 	items map[string]*MediaManager
 	Cache bool
 }
@@ -60,6 +63,8 @@ func NewManager(cache bool) *RemoteManager {
 }
 
 func (m *RemoteManager) StopAllAndClear() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for _, item := range m.items {
 		err := item.StopAllAndClear()
 		if err != nil {
@@ -74,7 +79,10 @@ func (m *RemoteManager) GetMedia(url string) (*MediaManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	if item, exists := m.items[url]; exists {
+	m.mu.Lock()
+	item, exists := m.items[url]
+	m.mu.Unlock()
+	if exists {
 		return item, nil
 	}
 	extractionFile := extractionFile(url)
@@ -119,8 +127,64 @@ func (m *RemoteManager) GetMedia(url string) (*MediaManager, error) {
 		},
 		m.Cache,
 	)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if item, exists := m.items[url]; exists {
+		return item, nil
+	}
 	m.items[url] = mediaItem
 	return mediaItem, nil
+}
+
+// HasExtraction reports whether the page's stream is known without
+// extracting it again.
+func (m *RemoteManager) HasExtraction(pageURL string) bool {
+	m.mu.Lock()
+	_, exists := m.items[pageURL]
+	m.mu.Unlock()
+	return exists || filehelper.Exists(extractionFile(pageURL))
+}
+
+// CachedExtraction returns the page's stored extraction and its manifest.
+func (m *RemoteManager) CachedExtraction(pageURL string) (*ExtractionData, string, error) {
+	data, err := filehelper.ReadJson[ExtractionData](extractionFile(pageURL))
+	if err != nil {
+		return nil, "", err
+	}
+	manifest, err := os.ReadFile(hlsFile(pageURL))
+	if err != nil {
+		return nil, "", err
+	}
+	return data, string(manifest), nil
+}
+
+// Seed stores an extraction made elsewhere (another instance's browser) as
+// if this instance had extracted the page itself.
+func (m *RemoteManager) Seed(data ExtractionData, manifest string) error {
+	if _, err := u.Parse(data.ManifestURL); err != nil || data.ManifestURL == "" {
+		return fmt.Errorf("invalid manifest URL %q", data.ManifestURL)
+	}
+	if _, err := hls.ParseManifest(manifest); err != nil {
+		return fmt.Errorf("invalid manifest: %w", err)
+	}
+	if err := storeExtraction(&data, manifest); err != nil {
+		return err
+	}
+	// Media loaded from an older extraction may hold expired stream URLs.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if item, exists := m.items[data.URL]; exists && item.ManifestURL.String() != data.ManifestURL {
+		delete(m.items, data.URL)
+	}
+	return nil
+}
+
+// storeExtraction writes the per-page cache that GetMedia reads.
+func storeExtraction(data *ExtractionData, manifest string) error {
+	if err := filehelper.WriteFile(hlsFile(data.URL), []byte(manifest)); err != nil {
+		return err
+	}
+	return filehelper.WriteJson(extractionFile(data.URL), data)
 }
 
 func extractionFile(url string) string {
@@ -137,9 +201,6 @@ func (*RemoteManager) doExtraction(url *u.URL) (*ExtractionData, *hls.ManifestPl
 	if err != nil {
 		return nil, nil, err
 	}
-	hlsFile := hlsFile(url.String())
-	filehelper.WriteFile(hlsFile, []byte(extraction.Manifest))
-
 	extractionData := &ExtractionData{
 		URL:         url.String(),
 		Cookies:     extraction.Cookies,
@@ -147,8 +208,9 @@ func (*RemoteManager) doExtraction(url *u.URL) (*ExtractionData, *hls.ManifestPl
 		Title:       extraction.Title,
 		ManifestURL: url.ResolveReference(extraction.URL).String(),
 	}
-
-	filehelper.WriteJson(extractionFile(url.String()), extractionData)
+	if err := storeExtraction(extractionData, extraction.Manifest); err != nil {
+		return nil, nil, err
+	}
 	return extractionData, manifest, nil
 }
 

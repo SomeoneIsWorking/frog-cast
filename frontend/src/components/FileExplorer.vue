@@ -6,7 +6,8 @@ import FileSelector from "./FileSelector.vue";
 import History from "./History.vue";
 import { GetTrackDisplayInfo } from "../../wailsjs/go/main/App";
 import LoadingIcon from "./LoadingIcon.vue";
-import { isAcceptedFileWithHttp } from "@/utils/file";
+import { isAcceptedFileWithHttp, isWebUrl } from "@/utils/file";
+import { isRemoteActive } from "@/services/source";
 const emit = defineEmits<{
   options: [];
 }>();
@@ -21,7 +22,12 @@ const handleCast = async (mediaPath: string) => {
 
   isLoading.value = true;
   try {
+    // A web page is extracted here even when a remote instance will cast it,
+    // so a site without a script opens its browser on this screen.
     const trackInfo = await GetTrackDisplayInfo(mediaPath);
+    if (isRemoteActive() && isWebUrl(mediaPath)) {
+      await store.loadRemoteTargets();
+    }
     store.setTrackInfo(trackInfo);
     emit("options");
   } finally {

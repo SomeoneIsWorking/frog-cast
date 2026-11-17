@@ -7,9 +7,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 
-	"wails-cast/pkg/options"
 	"wails-cast/pkg/castapi"
+	"wails-cast/pkg/options"
 )
 
 type CastInstance = castapi.CastInstance
@@ -104,4 +105,32 @@ func (a *App) RemoteUpdateSubtitle(base, token string, opts options.SubtitleCast
 
 func (a *App) RemoteChangeTracks(base, token string, change TrackChange) (*PlaybackState, error) {
 	return castapi.New(base, token).ChangeTracks(change)
+}
+
+// RemotePlayExtracted casts a web page through another instance, extracting
+// it here first: in this machine's browser, where someone can click play on a
+// site without a script.
+func (a *App) RemotePlayExtracted(base, token, pageURL, deviceIp string, opts RemotePlayOptions) (*PlaybackState, error) {
+	if !isWebURL(pageURL) {
+		return nil, fmt.Errorf("not a web page: %s", pageURL)
+	}
+	if _, err := a.RemoteManager.GetMedia(pageURL); err != nil {
+		return nil, fmt.Errorf("extracting %s: %w", pageURL, err)
+	}
+	data, manifest, err := a.RemoteManager.CachedExtraction(pageURL)
+	if err != nil {
+		return nil, err
+	}
+	return castapi.New(base, token).PlayExtracted(castapi.PlayExtractedRequest{
+		Page: castapi.ExtractedPage{
+			PageURL:     pageURL,
+			Title:       data.Title,
+			ManifestURL: data.ManifestURL,
+			Manifest:    manifest,
+			Headers:     data.Headers,
+			Cookies:     data.Cookies,
+		},
+		DeviceIP:    deviceIp,
+		PlayOptions: opts,
+	})
 }

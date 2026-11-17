@@ -186,6 +186,10 @@ export function RemotePlay(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['RemotePlay'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function RemotePlayExtracted(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['RemotePlayExtracted'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function RemoteSeasonCancel(arg1, arg2) {
   return window['go']['main']['App']['RemoteSeasonCancel'](arg1, arg2);
 }

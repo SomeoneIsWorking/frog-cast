@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -94,6 +96,7 @@ func newTestApp(t *testing.T) (*App, *fakeReceiver) {
 	t.Helper()
 	fake := &fakeReceiver{}
 	a := &App{
+		ctx:           context.Background(),
 		mediaServer:   NewServer("127.0.0.1", 0),
 		localIp:       "127.0.0.1",
 		historyStore:  NewHistoryStore(),
@@ -411,5 +414,74 @@ func TestSubtitleOffsetIsKeptPerMediaByTheCastingInstance(t *testing.T) {
 	}
 	if got := a.historyStore.SubtitleDelay(media); got != 2.5 {
 		t.Fatalf("re-adding to history dropped the offset: %v", got)
+	}
+}
+
+// A web page extracted on a controller is cast from the stored result, with
+// no extraction on the casting instance and the controller's headers used
+// against the CDN.
+func TestPlayExtractedCastsFromTheControllersExtraction(t *testing.T) {
+	a, fake := newTestApp(t)
+	a.RemoteManager = remote.NewManager(true)
+	page := "https://example.test/watch/42/"
+
+	var referer string
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		referer = r.Header.Get("Referer")
+		w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg0.ts\n#EXTINF:4.0,\nseg1.ts\n#EXT-X-ENDLIST\n"))
+	}))
+	defer cdn.Close()
+
+	body, err := json.Marshal(castapi.PlayExtractedRequest{
+		Page: castapi.ExtractedPage{
+			PageURL:     page,
+			Title:       "Film 42",
+			ManifestURL: cdn.URL + "/42/master.m3u8",
+			Manifest: "#EXTM3U\n" +
+				"#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\n" +
+				"v/720.m3u8\n",
+			Headers: map[string]string{"Referer": page},
+		},
+		DeviceIP: "192.168.1.50",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.RemoteManager.HasExtraction(page) {
+		t.Fatal("extraction present before seeding")
+	}
+
+	rec := httptest.NewRecorder()
+	NewHTTPServer(a).handlePlayExtracted(rec, httptest.NewRequest(http.MethodPost, "/play-extracted", bytes.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("play-extracted: %d %s", rec.Code, rec.Body)
+	}
+	if referer != page {
+		t.Fatalf("CDN saw Referer %q, want the controller's %q", referer, page)
+	}
+	if len(fake.loads) != 1 {
+		t.Fatalf("loads = %d", len(fake.loads))
+	}
+	state := a.currentPlaybackState()
+	if state.MediaPath != page || state.MediaName != "Film 42" || state.Duration != 10 {
+		t.Fatalf("state = %+v", state)
+	}
+	if _, _, err := a.RemoteManager.CachedExtraction(page); err != nil {
+		t.Fatalf("extraction not stored for replay: %v", err)
+	}
+}
+
+func TestPlayURLWithoutScriptOrCacheNeedsExtraction(t *testing.T) {
+	a, _ := newTestApp(t)
+	a.RemoteManager = remote.NewManager(true)
+	rec := httptest.NewRecorder()
+	body := `{"url":"https://unscripted.example.test/film/"}`
+	NewHTTPServer(a).handlePlayURL(rec, httptest.NewRequest(http.MethodPost, "/play-url", strings.NewReader(body)))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d %s, want 409", rec.Code, rec.Body)
+	}
+	var er castapi.ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &er); err != nil || !er.NeedsExtraction {
+		t.Fatalf("body = %s", rec.Body)
 	}
 }

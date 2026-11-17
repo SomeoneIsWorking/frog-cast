@@ -7,7 +7,7 @@ quality, and the subtitle source. Local and remote go through the same UI and
 the same backend calls, with the only difference being which instance receives
 them.
 
-Status: Phases 0–5 done (2026-11-17); Phase 6 not started.
+Status: Phases 0–6 built (2026-11-17); manual TV checks pending.
 
 ## Where things stand
 
@@ -179,6 +179,29 @@ Things to check while building it:
   controller can do it and resend, instead of a silent failure.
 - Shares Phases 1–4 with everything else: once it's playing, the track and
   subtitle controls work the same as for any other cast.
+
+As built:
+
+- `RemotePlayExtracted` (desktop binding) extracts through the local
+  `RemoteManager` (the same cache a local cast fills), reads it back with
+  `CachedExtraction`, and posts it to `/play-extracted`. The server stores it
+  with `RemoteManager.Seed`. Seed shares `storeExtraction` with server-side
+  extraction, and it drops an in-memory media whose manifest URL differs, so a
+  resend replaces expired links. The cast store routes web URLs to it whenever
+  the active source is remote. The URL box loads the remote's cast targets
+  for the Cast Options panel.
+- Subtitles aren't sent: the per-page cache doesn't keep extracted subtitles
+  on either path yet (`doExtraction` drops them). Once it does, they belong
+  in `ExtractedPage` and `storeExtraction`.
+- `/play` and `/play-url` answer 409 with `needsExtraction: true` for a web
+  page that has neither a cached extraction nor a Lua script, instead of
+  opening a browser on the server's screen. `castapi` turns that into
+  `ErrNeedsExtraction`.
+- Still open: a cached extraction whose links have expired is only noticed
+  when segment downloads fail during playback. Detecting it up front means
+  probing the cached stream before casting.
+- Not yet checked: CDNs that bind tokens to the extracting client's IP or
+  cookies (needs real sites; see the manual checks).
 
 ## Testing
 

@@ -45,6 +45,7 @@ import { useCastStore } from "../stores/cast";
 import { useDownloadsStore } from "../stores/downloads";
 import { Check, Download, Square } from "lucide-vue-next";
 import ProgressBar from "./ProgressBar.vue";
+import { isWebUrl } from "@/utils/file";
 
 const castStore = useCastStore();
 const downloadsStore = useDownloadsStore();
@@ -85,9 +86,7 @@ const downloadState = computed(() => {
   );
 });
 
-const isRemote = computed(() => {
-  return props.path.startsWith("http://") || props.path.startsWith("https://");
-});
+const isRemote = computed(() => isWebUrl(props.path));
 
 const loadTrackProgress = async () => {
   if (!isRemote.value) return;

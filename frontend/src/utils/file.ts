@@ -9,12 +9,18 @@ export function isAcceptedFile(
   return acceptedExtensions.some((accepted) => accepted.toLowerCase() === ext);
 }
 
+// isWebUrl reports whether media is a web page or stream URL rather than a
+// local file.
+export function isWebUrl(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.startsWith("http://") || lower.startsWith("https://");
+}
+
 export function isAcceptedFileWithHttp(
   filePath: string,
   acceptedExtensions: string[]
 ) {
-  const lowerPath = filePath.toLowerCase();
-  if (lowerPath.startsWith("http://") || lowerPath.startsWith("https://")) {
+  if (isWebUrl(filePath)) {
     return true; // Accept all URLs
   }
   return isAcceptedFile(filePath, acceptedExtensions);

@@ -135,7 +135,7 @@ func (a *App) getMediaURL() string {
 func (a *App) GetTrackDisplayInfo(fileNameOrUrl string) (*TrackDisplayInfo, error) {
 	trackInfo := &hls.ManifestPlaylist{}
 	var err error
-	remote := strings.HasPrefix(fileNameOrUrl, "http://") || strings.HasPrefix(fileNameOrUrl, "https://")
+	remote := isWebURL(fileNameOrUrl)
 	if remote {
 		mediaManager, err := a.RemoteManager.GetMedia(fileNameOrUrl)
 		if err != nil {
@@ -250,8 +250,7 @@ func (a *App) streamOptionsFor(castOptions *options.CastOptions, style *castapi.
 // prepareStream builds the stream handler for the media and installs it on
 // the media server. It returns the media's display name and duration.
 func (a *App) prepareStream(fileNameOrUrl string, opts options.StreamOptions) (string, float64, error) {
-	isRemote := strings.HasPrefix(fileNameOrUrl, "http://") || strings.HasPrefix(fileNameOrUrl, "https://")
-	if isRemote {
+	if isWebURL(fileNameOrUrl) {
 		logger.Info("Preparing remote stream", "url", fileNameOrUrl)
 		manager, err := a.RemoteManager.GetMedia(fileNameOrUrl)
 		if err != nil {
@@ -1133,6 +1132,12 @@ func (a *App) stateLocked() PlaybackState {
 }
 
 // Helper functions
+
+// isWebURL reports whether media is a web page or stream URL rather than a
+// local file.
+func isWebURL(media string) bool {
+	return strings.HasPrefix(media, "http://") || strings.HasPrefix(media, "https://")
+}
 
 func extractDeviceName(deviceURL string) string {
 	// Extract name from URL or return address

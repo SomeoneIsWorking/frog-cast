@@ -6,6 +6,7 @@ package castapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,6 +15,10 @@ import (
 
 	"wails-cast/pkg/options"
 )
+
+// ErrNeedsExtraction: the instance can't extract the page without a browser
+// someone can see; extract it here and use PlayExtracted.
+var ErrNeedsExtraction = errors.New("the page needs extracting in a visible browser")
 
 type Client struct {
 	Base  string
@@ -71,6 +76,9 @@ func (c *Client) do(method, path string, body, out any) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var er ErrorResponse
 		if json.NewDecoder(resp.Body).Decode(&er) == nil && er.Error != "" {
+			if er.NeedsExtraction {
+				return fmt.Errorf("remote: %s: %w", er.Error, ErrNeedsExtraction)
+			}
 			return fmt.Errorf("remote: %s", er.Error)
 		}
 		return fmt.Errorf("remote: status %s", resp.Status)
@@ -251,6 +259,15 @@ func (c *Client) UpdateSubtitle(opts options.SubtitleCastOptions) error {
 func (c *Client) ChangeTracks(change TrackChange) (*PlaybackState, error) {
 	var resp PlayResponse
 	if err := c.do(http.MethodPost, "/tracks", change, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.State, nil
+}
+
+// PlayExtracted casts a web page that was extracted on this side.
+func (c *Client) PlayExtracted(req PlayExtractedRequest) (*PlaybackState, error) {
+	var resp PlayResponse
+	if err := c.do(http.MethodPost, "/play-extracted", req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp.State, nil

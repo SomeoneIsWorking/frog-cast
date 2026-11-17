@@ -6,6 +6,7 @@ import { castapi, ffmpeg, main, options } from "../../wailsjs/go/models";
 import { mediaService } from "@/services/media";
 import { useSettingsStore } from "./settings";
 import { parseSubtitlePath, buildSubtitlePath } from "@/utils/subtitle";
+import { isWebUrl } from "@/utils/file";
 import { useHistoryStore } from "./history";
 import {
   activeSource,
@@ -262,22 +263,28 @@ export const useCastStore = defineStore("cast", () => {
   const prepareEpisode = async (path: string, source: Source) => {
     activeSource.value = source;
     if (source.kind === "remote") {
-      const { RemoteTrackInfo, RemoteDevices } = await import(
-        "../../wailsjs/go/main/App"
-      );
-      const [info, devs] = await Promise.all([
+      const { RemoteTrackInfo } = await import("../../wailsjs/go/main/App");
+      const [info] = await Promise.all([
         RemoteTrackInfo(source.base, source.token, path),
-        RemoteDevices(source.base, source.token),
+        loadRemoteTargets(),
       ]);
-      remoteDevices.value = devs;
-      // Default to the first real cast target (Chromecast), else the remote itself.
-      const def = devs.find((d) => d.host !== "local") || devs[0];
-      remoteTargetHost.value = def ? def.host : "local";
       setTrackInfo(info);
     } else {
       const { GetTrackDisplayInfo } = await import("../../wailsjs/go/main/App");
       setTrackInfo(await GetTrackDisplayInfo(path));
     }
+  };
+
+  // loadRemoteTargets lists the active remote's cast targets for the Cast
+  // Options panel, defaulting to its first real device (Chromecast), else the
+  // remote itself.
+  const loadRemoteTargets = async () => {
+    const { RemoteDevices } = await import("../../wailsjs/go/main/App");
+    const s = activeSource.value;
+    const devs = await RemoteDevices(s.base, s.token);
+    remoteDevices.value = devs;
+    const def = devs.find((d) => d.host !== "local") || devs[0];
+    remoteTargetHost.value = def ? def.host : "local";
   };
 
   const startCasting = async (media: string) => {
@@ -290,9 +297,14 @@ export const useCastStore = defineStore("cast", () => {
     );
 
     if (isRemoteActive()) {
-      const { RemotePlay } = await import("../../wailsjs/go/main/App");
+      const { RemotePlay, RemotePlayExtracted } = await import(
+        "../../wailsjs/go/main/App"
+      );
       const s = activeSource.value;
-      playbackState.value = await RemotePlay(
+      // A web page is extracted here, in this machine's browser, and the
+      // remote casts the result; a library item is the remote's own file.
+      const play = isWebUrl(media) ? RemotePlayExtracted : RemotePlay;
+      playbackState.value = await play(
         s.base,
         s.token,
         media,
@@ -429,6 +441,7 @@ export const useCastStore = defineStore("cast", () => {
     discoverDevices,
     attachToRemotePlayback,
     prepareEpisode,
+    loadRemoteTargets,
     startCasting,
     checkFFmpeg,
     updateLiveSubtitleSettings,
