@@ -60,12 +60,16 @@ func ProcessSubtitles(input *mix.FileOrBuffer, target *mix.TargetFileOrBuffer, i
 	webvttString := subtitles.ToWebVTTString()
 	if target.IsBuffer {
 		return mix.Buffer([]byte(webvttString)), nil
-	} else {
-		err := os.WriteFile(target.FilePath, []byte(webvttString), 0644)
-		if err != nil {
-			return nil, err
-		}
-		return mix.File(target.FilePath), nil
 	}
+	// The target may be a link to the source file (readSubtitles links it in
+	// for the untransformed case): replace the link, never write through it.
+	tmp := target.FilePath + ".tmp"
+	if err := os.WriteFile(tmp, []byte(webvttString), 0644); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(tmp, target.FilePath); err != nil {
+		return nil, err
+	}
+	return mix.File(target.FilePath), nil
 
 }
