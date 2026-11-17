@@ -116,6 +116,9 @@ func (a *App) RemotePlayExtracted(base, token, pageURL, deviceIp string, opts Re
 	if !isWebURL(pageURL) {
 		return nil, fmt.Errorf("not a web page: %s", pageURL)
 	}
+	if err := a.readyPage(pageURL, opts.VideoTrack, opts.AudioTrack, true); err != nil {
+		return nil, err
+	}
 	if _, err := a.RemoteManager.GetMedia(pageURL); err != nil {
 		return nil, fmt.Errorf("extracting %s: %w", pageURL, err)
 	}

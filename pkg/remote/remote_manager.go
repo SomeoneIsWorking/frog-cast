@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"context"
 	"fmt"
 	u "net/url"
 	"os"
@@ -186,16 +187,47 @@ func (m *RemoteManager) Seed(data ExtractionData, manifest string, subtitles []P
 	if _, err := hls.ParseManifest(manifest); err != nil {
 		return fmt.Errorf("invalid manifest: %w", err)
 	}
-	if err := storeExtraction(&data, manifest, subtitles); err != nil {
-		return err
+	// Track playlists cached from an older extraction hold its expired links.
+	if old, err := filehelper.ReadJson[ExtractionData](extractionFile(data.URL)); err == nil && old.ManifestURL != data.ManifestURL {
+		if err := m.forget(data.URL); err != nil {
+			return err
+		}
 	}
-	// Media loaded from an older extraction may hold expired stream URLs.
+	return storeExtraction(&data, manifest, subtitles)
+}
+
+// DropIfStale checks a page's cached stream before casting it, for the
+// tracks the cast would play. When it no longer loads, the page's cache is
+// dropped, so the next cast extracts it again, and the reason is returned.
+func (m *RemoteManager) DropIfStale(ctx context.Context, pageURL string, videoTrack, audioTrack int) (dropped bool, reason error) {
+	if !m.HasExtraction(pageURL) {
+		return false, nil
+	}
+	media, err := m.GetMedia(pageURL)
+	if err == nil {
+		err = media.Probe(ctx, videoTrack, audioTrack)
+	}
+	if err == nil {
+		return false, nil
+	}
+	if ferr := m.forget(pageURL); ferr != nil {
+		return false, ferr
+	}
+	return true, err
+}
+
+// forget stops the page's downloads and removes everything cached for it.
+func (m *RemoteManager) forget(pageURL string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if item, exists := m.items[data.URL]; exists && item.ManifestURL.String() != data.ManifestURL {
-		delete(m.items, data.URL)
+	item, exists := m.items[pageURL]
+	delete(m.items, pageURL)
+	m.mu.Unlock()
+	if exists {
+		for _, track := range item.Items {
+			track.StopDownload()
+		}
 	}
-	return nil
+	return os.RemoveAll(folders.Video(pageURL))
 }
 
 // storeExtraction writes the per-page cache that GetMedia reads, with the

@@ -199,11 +199,18 @@ As built:
   (`TestPlayExtractedCastsThePagesSubtitle`).
 - `/play` and `/play-url` answer 409 with `needsExtraction: true` for a web
   page that has neither a cached extraction nor a Lua script, instead of
-  opening a browser on the server's screen. `castapi` turns that into
+  opening a browser on the server's screen (`App.readyPage`). `castapi` turns that into
   `ErrNeedsExtraction`.
-- Still open: a cached extraction whose links have expired is only noticed
-  when segment downloads fail during playback. Detecting it up front means
-  probing the cached stream before casting.
+- Expired links are caught before casting. `castWithStyle` (via `readyPage`)
+  probes the first segment not yet on disk of the video and audio tracks the
+  cast will play (`RemoteManager.DropIfStale`); when it doesn't load, the
+  page's cache folder is dropped. The desktop then extracts again in its
+  browser; `/play`, `/play-url` and `/play-extracted` answer 409 with
+  `needsExtraction` and the reason (`TestPlayURLWithExpiredStreamNeedsExtraction`).
+  A fully downloaded page still plays offline. `RemotePlayExtracted` checks the
+  controller's own cache the same way before sending it, and `Seed` drops a
+  page's cached track playlists when the resent links differ
+  (`TestSeedWithNewLinksDropsCachedTrackPlaylists`).
 - Not yet checked: CDNs that bind tokens to the extracting client's IP or
   cookies (needs real sites; see the manual checks).
 

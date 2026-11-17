@@ -19,6 +19,7 @@ import (
 	"wails-cast/pkg/ai"
 	"wails-cast/pkg/castapi"
 	"wails-cast/pkg/events"
+	"wails-cast/pkg/extractor"
 	"wails-cast/pkg/ffmpeg"
 	"wails-cast/pkg/folders"
 	"wails-cast/pkg/hls"
@@ -211,13 +212,40 @@ func (a *App) GetTrackDisplayInfo(fileNameOrUrl string) (*TrackDisplayInfo, erro
 // CastToDevice casts media (local file or remote URL) to a device, with this
 // instance's subtitle style.
 func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *options.CastOptions) (*PlaybackState, error) {
-	return a.castWithStyle(deviceIp, fileNameOrUrl, castOptions, nil)
+	return a.castWithStyle(deviceIp, fileNameOrUrl, castOptions, nil, true)
+}
+
+// readyPage checks a web page's cached stream before it is cast, dropping it
+// when its links no longer load. Without a browser on this screen
+// (browserHere false), a page that would then need one is refused with
+// castapi.ErrNeedsExtraction.
+func (a *App) readyPage(pageURL string, videoTrack, audioTrack int, browserHere bool) error {
+	dropped, reason := a.RemoteManager.DropIfStale(a.ctx, pageURL, videoTrack, audioTrack)
+	if !dropped && reason != nil {
+		return reason
+	}
+	if dropped {
+		logger.Warn("Cached stream no longer loads, extracting again", "url", pageURL, "reason", reason)
+	}
+	if browserHere || a.RemoteManager.HasExtraction(pageURL) || extractor.HasScript(pageURL) {
+		return nil
+	}
+	if dropped {
+		return fmt.Errorf("the page's stream link expired (%v); send it again from the desktop app: %w", reason, castapi.ErrNeedsExtraction)
+	}
+	return fmt.Errorf("this page has no script, so it needs a browser someone can see: send it from the desktop app: %w", castapi.ErrNeedsExtraction)
 }
 
 // castWithStyle casts with the subtitle style of the controller that started
 // the cast; nil uses this instance's settings. The timing offset is always
-// the one this instance keeps for the media.
-func (a *App) castWithStyle(deviceIp, fileNameOrUrl string, castOptions *options.CastOptions, style *castapi.SubtitleStyle) (*PlaybackState, error) {
+// the one this instance keeps for the media. browserHere is whether a web
+// page may be extracted in a browser on this screen.
+func (a *App) castWithStyle(deviceIp, fileNameOrUrl string, castOptions *options.CastOptions, style *castapi.SubtitleStyle, browserHere bool) (*PlaybackState, error) {
+	if isWebURL(fileNameOrUrl) {
+		if err := a.readyPage(fileNameOrUrl, castOptions.VideoTrack, castOptions.AudioTrack, browserHere); err != nil {
+			return nil, err
+		}
+	}
 	opts := a.streamOptionsFor(castOptions, style)
 	opts.Subtitle.DelaySeconds = a.historyStore.SubtitleDelay(fileNameOrUrl)
 	state, err := a.startCast(deviceIp, fileNameOrUrl, opts, 0, false)

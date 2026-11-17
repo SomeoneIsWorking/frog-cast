@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -525,6 +526,86 @@ func TestPlayExtractedCastsThePagesSubtitle(t *testing.T) {
 	}
 	if len(labels) != 1 || labels[0] != "Page: tr" {
 		t.Fatalf("track info subtitles = %+v", info.SubtitleTracks)
+	}
+}
+
+// expiringCDN serves an HLS stream whose segments answer 403 once expired.
+func expiringCDN(t *testing.T) (cdn *httptest.Server, expired *bool) {
+	expired = new(bool)
+	cdn = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".ts") && *expired:
+			w.WriteHeader(http.StatusForbidden)
+		case strings.HasSuffix(r.URL.Path, ".ts"):
+			w.Write([]byte("segment"))
+		default:
+			// The first path element is the link's token.
+			token := strings.Split(r.URL.Path, "/")[1]
+			fmt.Fprintf(w, "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\n%s-seg0.ts\n#EXT-X-ENDLIST\n", token)
+		}
+	}))
+	t.Cleanup(cdn.Close)
+	return cdn, expired
+}
+
+func seedPage(t *testing.T, a *App, page, manifestURL string) {
+	t.Helper()
+	master := "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\nv/720.m3u8\n"
+	if err := a.RemoteManager.Seed(remote.ExtractionData{URL: page, Title: "Film", ManifestURL: manifestURL}, master, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPlayURLWithExpiredStreamNeedsExtraction(t *testing.T) {
+	a, fake := newTestApp(t)
+	a.RemoteManager = remote.NewManager(true)
+	page := "https://unscripted.example.test/film/7/"
+	cdn, expired := expiringCDN(t)
+	seedPage(t, a, page, cdn.URL+"/t/master.m3u8")
+	*expired = true
+
+	rec := httptest.NewRecorder()
+	body := `{"url":"` + page + `","deviceIp":"192.168.1.50"}`
+	NewHTTPServer(a).handlePlayURL(rec, httptest.NewRequest(http.MethodPost, "/play-url", strings.NewReader(body)))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d %s, want 409", rec.Code, rec.Body)
+	}
+	var er castapi.ErrorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &er); err != nil || !er.NeedsExtraction || !strings.Contains(er.Error, "403") {
+		t.Fatalf("body = %s", rec.Body)
+	}
+	if a.RemoteManager.HasExtraction(page) {
+		t.Fatal("expired extraction kept")
+	}
+	if len(fake.loads) != 0 {
+		t.Fatalf("loaded %d times", len(fake.loads))
+	}
+}
+
+func TestSeedWithNewLinksDropsCachedTrackPlaylists(t *testing.T) {
+	a, _ := newTestApp(t)
+	a.RemoteManager = remote.NewManager(true)
+	page := "https://unscripted.example.test/film/8/"
+	cdn, expired := expiringCDN(t)
+	seedPage(t, a, page, cdn.URL+"/old/master.m3u8")
+	if _, err := a.castWithStyle("local", page, &options.CastOptions{SubtitlePath: "none"}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	*expired = true
+
+	// The controller resends the page with fresh links: they are cast.
+	seedPage(t, a, page, cdn.URL+"/new/master.m3u8")
+	*expired = false
+	media, err := a.RemoteManager.GetMedia(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	track, err := media.GetTrack(context.Background(), "video", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uri := track.Manifest.Segments[0].URI.String(); uri != "new-seg0.ts" {
+		t.Fatalf("segment = %s, want the new playlist's", uri)
 	}
 }
 

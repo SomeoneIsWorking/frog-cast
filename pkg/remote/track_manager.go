@@ -227,6 +227,21 @@ func (this *TrackManager) getInitSegment(ctx context.Context) ([]byte, error) {
 	return data, nil
 }
 
+// probe checks that the first segment not yet on disk still downloads.
+func (this *TrackManager) probe(ctx context.Context) error {
+	for i, done := range this.DownloadedSegments {
+		if done {
+			continue
+		}
+		url, err := this.resolveSegmentURL(i)
+		if err != nil {
+			return err
+		}
+		return this.FileDownloader.Probe(ctx, url)
+	}
+	return nil
+}
+
 func (this *TrackManager) resolveSegmentURL(segmentIndex int) (*url.URL, error) {
 	segment := this.Manifest.Segments[segmentIndex]
 	resolvedUrl := this.ManifestURL.ResolveReference(segment.URI)

@@ -33,6 +33,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -48,7 +49,6 @@ import (
 
 	"wails-cast/pkg/castapi"
 	"wails-cast/pkg/events"
-	"wails-cast/pkg/extractor"
 	"wails-cast/pkg/options"
 	"wails-cast/pkg/remote"
 )
@@ -454,13 +454,10 @@ func (h *HTTPServer) handlePlay(w http.ResponseWriter, r *http.Request) {
 		deviceIP = "local"
 	}
 
-	if h.needsExtraction(w, req.ID) {
-		return
-	}
-	state, err := h.app.castWithStyle(deviceIP, req.ID, h.castOptions(req.PlayOptions), req.Subtitle)
+	state, err := h.app.castWithStyle(deviceIP, req.ID, h.castOptions(req.PlayOptions), req.Subtitle, false)
 	if err != nil {
 		logger.Error("Remote API: play failed", "id", req.ID, "error", err)
-		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		writeCastError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, playResponse{OK: true, State: *state})
@@ -506,30 +503,25 @@ func (h *HTTPServer) handlePlayURL(w http.ResponseWriter, r *http.Request) {
 		deviceIP = "local"
 	}
 
-	if h.needsExtraction(w, req.URL) {
-		return
-	}
-	state, err := h.app.castWithStyle(deviceIP, req.URL, h.castOptions(req.PlayOptions), req.Subtitle)
+	state, err := h.app.castWithStyle(deviceIP, req.URL, h.castOptions(req.PlayOptions), req.Subtitle, false)
 	if err != nil {
 		logger.Error("Remote API: play-url failed", "url", req.URL, "error", err)
-		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		writeCastError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, playResponse{OK: true, State: *state})
 }
 
-// needsExtraction answers 409 for a web page this instance has no stream for
-// and no Lua script to find it headless: its browser would open on a screen
-// nobody is watching. The client extracts it and uses /play-extracted.
-func (h *HTTPServer) needsExtraction(w http.ResponseWriter, id string) bool {
-	if !isWebURL(id) || h.app.RemoteManager.HasExtraction(id) || extractor.HasScript(id) {
-		return false
+// writeCastError answers a failed cast. A web page this instance can't
+// extract without a browser on its screen (no script, or its cached stream
+// expired) is 409 with needsExtraction: the client extracts it and uses
+// /play-extracted.
+func writeCastError(w http.ResponseWriter, err error) {
+	if errors.Is(err, castapi.ErrNeedsExtraction) {
+		writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error(), NeedsExtraction: true})
+		return
 	}
-	writeJSON(w, http.StatusConflict, errorResponse{
-		Error:           "this page has no script, so it needs a browser someone can see: send it from the desktop app",
-		NeedsExtraction: true,
-	})
-	return true
+	writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 }
 
 // handlePlayExtracted casts a web page whose stream a controller found in its
@@ -581,10 +573,10 @@ func (h *HTTPServer) handlePlayExtracted(w http.ResponseWriter, r *http.Request)
 	if deviceIP == "" {
 		deviceIP = "local"
 	}
-	state, err := h.app.castWithStyle(deviceIP, req.Page.PageURL, h.castOptions(req.PlayOptions), req.Subtitle)
+	state, err := h.app.castWithStyle(deviceIP, req.Page.PageURL, h.castOptions(req.PlayOptions), req.Subtitle, false)
 	if err != nil {
 		logger.Error("Remote API: play-extracted failed", "url", req.Page.PageURL, "error", err)
-		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		writeCastError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, playResponse{OK: true, State: *state})

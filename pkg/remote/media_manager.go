@@ -61,6 +61,31 @@ func (this *MediaManager) StopAllAndClear() error {
 	return nil
 }
 
+// Probe checks that the video and audio tracks a cast would play can still
+// be fetched, for whatever isn't on disk yet.
+func (this *MediaManager) Probe(ctx context.Context, videoTrack, audioTrack int) error {
+	tracks := []struct {
+		kind  string
+		index int
+	}{{"video", videoTrack}}
+	if len(this.Manifest.AudioTracks) > 0 {
+		tracks = append(tracks, struct {
+			kind  string
+			index int
+		}{"audio", audioTrack})
+	}
+	for _, t := range tracks {
+		track, err := this.GetTrack(ctx, t.kind, t.index)
+		if err != nil {
+			return err
+		}
+		if err := track.probe(ctx); err != nil {
+			return fmt.Errorf("%s track: %w", t.kind, err)
+		}
+	}
+	return nil
+}
+
 func (this *MediaManager) GetDuration() float64 {
 	trackManager, err := this.GetTrack(context.Background(), "video", 0)
 	if err != nil {
