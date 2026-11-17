@@ -7,7 +7,7 @@ quality, and the subtitle source. Local and remote go through the same UI and
 the same backend calls, with the only difference being which instance receives
 them.
 
-Status: planned, not started (written 2026-11-16).
+Status: Phase 0 done (2026-11-17); Phases 1–6 not started.
 
 ## Where things stand
 

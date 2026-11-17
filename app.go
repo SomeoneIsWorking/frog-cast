@@ -32,8 +32,10 @@ var logger = _logger.Logger
 var customAppID = "7B88BB2E" // Custom receiver app ID
 
 type App struct {
-	ctx           context.Context
-	App           *application.Application
+	ctx context.Context
+	App castReceiver
+	// newReceiver connects to a cast device; tests replace it with a fake.
+	newReceiver   func(*App) castReceiver
 	discovery     *DeviceDiscovery
 	mediaServer   *Server
 	httpServer    *HTTPServer // remote control API for companion apps
@@ -43,7 +45,12 @@ type App struct {
 	// positionAt is when playbackState.CurrentTime was last set. The device
 	// only reports its position on status changes, so remote clients get the
 	// position extrapolated from here (see currentPlaybackState).
-	positionAt    time.Time
+	positionAt time.Time
+	// subtitlePath is the subtitle source of the current cast ("none",
+	// "external:<file>" or "embedded:<n>"). A subtitle update with an empty
+	// Path keeps it, so a controller that doesn't know the source can still
+	// restyle subtitles without turning them off.
+	subtitlePath  string
 	historyStore  *HistoryStore
 	settingsStore *SettingsStore
 	mu            sync.RWMutex
@@ -55,10 +62,11 @@ type App struct {
 
 func (a *App) createApplication() {
 	a.stopPlayback(false) // ignore error
-	app := application.NewApplication()
-	app.AddMessageFunc(a.handleChromecastMessage)
-	app.SetRequestTimeout(30 * time.Second)
-	a.App = app
+	newReceiver := a.newReceiver
+	if newReceiver == nil {
+		newReceiver = newChromecastReceiver
+	}
+	a.App = newReceiver(a)
 }
 
 func NewApp() *App {
@@ -258,6 +266,7 @@ func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *o
 	a.playbackState.DeviceURL = deviceIp
 	a.playbackState.DeviceName = extractDeviceName(deviceIp)
 	a.playbackState.Duration = duration
+	a.subtitlePath = options.Subtitle.Path
 	a.mu.Unlock()
 
 	if deviceIp == "local" {
@@ -319,7 +328,7 @@ func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *o
 	a.mu.Lock()
 	a.playbackState.Status = "PLAYING"
 	a.playbackState.CurrentTime = 0
-		a.positionAt = time.Now()
+	a.positionAt = time.Now()
 	state := a.playbackState
 	a.mu.Unlock()
 	// Notify the desktop UI (and any remote clients) of the new state.
@@ -396,20 +405,42 @@ func (a *App) SeekTo(seekTime float64) error {
 // re-seeks so burn-in changes take effect. For external (non-burn-in)
 // subtitles it also re-sends the VTT URL so the receiver swaps in the freshly
 // shifted/styled subtitle track.
-func (a *App) UpdateSubtitleSettings(options options.SubtitleCastOptions) error {
+//
+// An empty Path keeps the current cast's subtitle source.
+func (a *App) UpdateSubtitleSettings(opts options.SubtitleCastOptions) error {
+	a.mu.Lock()
+	if opts.Path == "" {
+		opts.Path = a.subtitlePath
+	} else {
+		a.subtitlePath = opts.Path
+	}
+	a.mu.Unlock()
+	if opts.Path == "" {
+		opts.Path = "none"
+	}
+
 	// Update subtitle path + full options on the live handler (clears cache).
-	a.mediaServer.SetSubtitlePath(options.Path)
-	a.mediaServer.UpdateSubtitleOptions(options)
+	a.mediaServer.SetSubtitlePath(opts.Path)
+	a.mediaServer.UpdateSubtitleOptions(opts)
+
+	// Hosting without a cast device: nothing to tell a receiver.
+	if a.App == nil {
+		return nil
+	}
 	a.App.Update()
 
 	// For external subtitles, re-send the VTT so the player reloads it with the
 	// new timing offset / style applied. The receiver auto-replaces the track.
-	if options.Path != "none" && !options.BurnIn {
+	if opts.Path != "none" && !opts.BurnIn {
 		a.sendSubtitles(fmt.Sprintf("http://%s:%d/subtitles.vtt", a.localIp, a.port))
 	}
 
-	currentTime := a.playbackState.CurrentTime
-	return a.App.SeekToTime(float32(currentTime))
+	// Re-seek to where the TV is now, not to its last report, which can be
+	// minutes old and would jump the video back.
+	a.mu.RLock()
+	position := a.extrapolatedPosition()
+	a.mu.RUnlock()
+	return a.App.SeekToTime(float32(position))
 }
 
 func (a *App) ClearCache() error {

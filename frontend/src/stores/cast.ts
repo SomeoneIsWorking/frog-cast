@@ -330,15 +330,10 @@ export const useCastStore = defineStore("cast", () => {
       setSubtitleDelay(mediaPath, overrides.delaySeconds);
     }
 
-    const path = castOptions.value
-      ? buildSubtitlePath(
-          castOptions.value.SubtitleType,
-          castOptions.value.SubtitlePath
-        )
-      : "none";
-
+    // An empty Path keeps the casting instance's current subtitle source:
+    // restyling never changes which subtitles are shown.
     const opts: options.SubtitleCastOptions = {
-      Path: path,
+      Path: "",
       BurnIn: settings?.subtitleBurnIn ?? false,
       FontSize: overrides.fontSize ?? settings?.subtitleFontSize ?? 24,
       IgnoreClosedCaptions: settings?.ignoreClosedCaptions ?? false,
