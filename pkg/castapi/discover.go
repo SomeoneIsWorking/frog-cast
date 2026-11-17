@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -88,14 +89,14 @@ func sendQuery(conn *net.UDPConn, qtype uint16, name string) error {
 type answerSet struct {
 	order  []string            // PTR targets, in arrival order
 	srv    map[string]*dns.SRV // instance -> service record
-	addrs  map[string]net.IP   // host name -> IPv4 address
+	addrs  map[string][]net.IP // host name -> IPv4 addresses
 	sender map[string]net.IP   // instance -> address it was announced from
 }
 
 func newAnswerSet() *answerSet {
 	return &answerSet{
 		srv:    map[string]*dns.SRV{},
-		addrs:  map[string]net.IP{},
+		addrs:  map[string][]net.IP{},
 		sender: map[string]net.IP{},
 	}
 }
@@ -115,7 +116,8 @@ func (s *answerSet) add(msg *dns.Msg, from net.IP) {
 		case *dns.SRV:
 			s.srv[r.Hdr.Name] = r
 		case *dns.A:
-			s.addrs[strings.ToLower(r.Hdr.Name)] = r.A
+			host := strings.ToLower(r.Hdr.Name)
+			s.addrs[host] = append(s.addrs[host], r.A)
 		}
 	}
 }
@@ -138,10 +140,7 @@ func (s *answerSet) instances(local map[string]bool) []CastInstance {
 		if srv == nil {
 			continue
 		}
-		ip := s.addrs[strings.ToLower(srv.Target)]
-		if ip == nil {
-			ip = s.sender[instance]
-		}
+		ip := reachable(s.addrs[strings.ToLower(srv.Target)], s.sender[instance])
 		if ip == nil || local[ip.String()] {
 			continue
 		}
@@ -158,6 +157,19 @@ func (s *answerSet) instances(local map[string]bool) []CastInstance {
 		})
 	}
 	return found
+}
+
+// reachable picks the host's address to connect to. A host advertises every
+// interface's address (a container bridge too); the one its answer came from
+// is known to reach us.
+func reachable(addrs []net.IP, sender net.IP) net.IP {
+	if sender != nil && (len(addrs) == 0 || slices.ContainsFunc(addrs, sender.Equal)) {
+		return sender
+	}
+	if len(addrs) > 0 {
+		return addrs[0]
+	}
+	return nil
 }
 
 // instanceName is the human part of "<name>._wailscast._tcp.local.", with
