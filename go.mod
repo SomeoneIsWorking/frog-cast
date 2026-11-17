@@ -6,6 +6,7 @@ require (
 	fyne.io/fyne/v2 v2.7.4
 	github.com/go-rod/rod v0.116.2
 	github.com/grandcat/zeroconf v1.0.0
+	github.com/miekg/dns v1.1.68
 	github.com/pkg/errors v0.9.1
 	github.com/vishen/go-chromecast v0.3.4
 	github.com/wailsapp/wails/v2 v2.11.0
@@ -51,7 +52,6 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.17 // indirect
-	github.com/miekg/dns v1.1.68 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.5.1 // indirect
