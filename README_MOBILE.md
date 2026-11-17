@@ -27,7 +27,7 @@ go install fyne.io/tools/cmd/fyne@v1.7.4
 export ANDROID_HOME=<sdk> ANDROID_NDK_HOME=<sdk>/ndk/<version>
 go generate ./pkg/webextract   # the WebView bridge (needs a JDK)
 cd cmd/mobile
-fyne package -os android/arm64 --app-id io.wailscast.remote --name "Cast Remote" --icon Icon.png
+fyne package -os android/arm64 --app-id io.wailscast.remote --name "Cast Remote" --icon ../../build/appicon.png
 adb install -r Cast_Remote.apk
 ```
 
@@ -35,10 +35,9 @@ adb install -r Cast_Remote.apk
 current phones. The APK is debug-signed; pass `--release` and sign it with
 `apksigner` for a release.
 
-iOS (macOS + Xcode): `fyne package -os ios --app-id io.wailscast.remote`.
+iOS (macOS + Xcode): `fyne package -os ios --app-id io.wailscast.remote --icon ../../build/appicon.png`.
 
-`Icon.png` is a placeholder; replace it with a 1024×1024 launcher icon before
-shipping.
+The launcher icon is the desktop app's (`build/appicon.png`).
 
 ## Screens
 
