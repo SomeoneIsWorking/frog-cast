@@ -111,6 +111,49 @@ stores the per-episode timing offset with its history entry and applies it on
 every cast, whichever device started it. A controller's own settings only
 provide defaults for casts that controller starts.
 
+## Phase 6: send a web page to another instance
+
+**Goal:** paste a site URL on the Mac and have fedora stream it to the TV, for
+any site, scripted or not.
+
+**Why the browser part stays on the sending side:** finding the stream
+(extraction) needs a browser. For a site without a Lua script, that browser is
+visible and waits for someone to click play. Today, `POST /play-url` makes the
+*receiving* instance extract, so for an unscripted site the browser window
+would open on fedora's screen, where nobody is looking. So the controller
+extracts, in its own browser where the user can click play, and sends the
+*result* to the server.
+
+- **Controller side:** run `extractor.Extract(pageURL)` locally, exactly as a
+  local cast does (scripted sites stay headless).
+- **New endpoint `POST /play-extracted`** with the extraction result: page
+  URL, title, manifest URL, manifest body, headers, cookies, subtitles (URL,
+  label and VTT content, since the server may not be able to fetch them
+  itself), plus `deviceIp` and the play options.
+- **Server side:** write the result into the same per-page cache that
+  server-side extraction fills (`extraction.json` and `playlist.m3u8` under
+  `folders.Video(pageURL)`, plus the subtitle files). Then call the normal
+  `CastToDevice(pageURL, …)`. From there nothing differs from a local
+  extraction, and history entries stay keyed by the page URL.
+- **UI:** when the active source is a remote instance, the desktop URL box
+  extracts locally, then calls a `RemotePlayExtracted` binding instead of
+  casting locally. `/play-url` stays for clients that can't run a browser,
+  such as the mobile app, and only works for scripted sites.
+
+Things to check while building it:
+
+- **Links tied to the client.** Some CDNs bind their tokens to the IP address
+  or cookies of whoever extracted them. At home both machines share one public
+  IP, so it should work, but test a few sites. If one fails, the server should
+  report it clearly rather than fail on segment downloads.
+- **Expired links on replay.** The cached extraction never expires (already a
+  known gap). Replaying an old history entry on the server needs a fresh
+  extraction, which for an unscripted site has to come from a controller
+  again. Have `/state` or the play call say "needs re-extraction" so the
+  controller can do it and resend, instead of a silent failure.
+- Shares Phases 1–4 with everything else: once it's playing, the track and
+  subtitle controls work the same as for any other cast.
+
 ## Testing
 
 - Go: unit test that `/state` includes the selection fields, and that
