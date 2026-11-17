@@ -36,6 +36,13 @@ func (u *ui) showConnect() {
 		u.openSession(name, castapi.New(base, token.Text))
 	}
 
+	// The last instance used; discovery corrects its address when the
+	// instance moved or was first reached through another interface.
+	last, lastName := prefs.String(prefBaseURL), prefs.String(prefName)
+	if lastName == "" {
+		lastName = strings.TrimPrefix(last, "http://")
+	}
+
 	var instances []castapi.CastInstance
 	list := widget.NewList(
 		func() int { return len(instances) },
@@ -75,6 +82,12 @@ func (u *ui) showConnect() {
 				rescan.Enable()
 				instances = found
 				list.Refresh()
+				for _, in := range found {
+					if in.Name == lastName && in.URL != last {
+						last = in.URL
+						prefs.SetString(prefBaseURL, last)
+					}
+				}
 				switch {
 				case err != nil:
 					status.SetText("Search failed: " + err.Error())
@@ -97,7 +110,7 @@ func (u *ui) showConnect() {
 
 	address := widget.NewEntry()
 	address.SetPlaceHolder("host:port, e.g. 192.168.1.20:9999")
-	if last := prefs.String(prefBaseURL); last != "" {
+	if last != "" {
 		address.SetText(strings.TrimPrefix(last, "http://"))
 	}
 	manual := widget.NewButtonWithIcon("Connect", theme.LoginIcon(), func() {
@@ -115,12 +128,8 @@ func (u *ui) showConnect() {
 	more := widget.NewAccordion(widget.NewAccordionItem("Connect by address", manualForm))
 
 	top := []fyne.CanvasObject{heading1("Cast Remote"), caption("Control wails-cast on your network")}
-	if last := prefs.String(prefBaseURL); last != "" {
-		name := prefs.String(prefName)
-		if name == "" {
-			name = strings.TrimPrefix(last, "http://")
-		}
-		again := widget.NewButtonWithIcon("Reconnect to "+name, theme.MediaPlayIcon(), func() { connect(name, last) })
+	if last != "" {
+		again := widget.NewButtonWithIcon("Reconnect to "+lastName, theme.MediaPlayIcon(), func() { connect(lastName, last) })
 		again.Importance = widget.HighImportance
 		top = append(top, again)
 	}
