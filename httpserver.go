@@ -549,16 +549,32 @@ func (h *HTTPServer) handlePlayExtracted(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "page.pageUrl must be an http(s) URL"})
 		return
 	}
-	err := h.app.RemoteManager.Seed(remote.ExtractionData{
+	if req.PageSubtitle != nil && (*req.PageSubtitle < 0 || *req.PageSubtitle >= len(req.Page.Subtitles)) {
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "pageSubtitle out of range"})
+		return
+	}
+	subtitles := make([]remote.PageSubtitleContent, 0, len(req.Page.Subtitles))
+	for _, sub := range req.Page.Subtitles {
+		subtitles = append(subtitles, remote.PageSubtitleContent{Label: sub.Label, Content: sub.Content})
+	}
+	data := remote.ExtractionData{
 		URL:         req.Page.PageURL,
 		Title:       req.Page.Title,
 		ManifestURL: req.Page.ManifestURL,
 		Headers:     req.Page.Headers,
 		Cookies:     req.Page.Cookies,
-	}, req.Page.Manifest)
-	if err != nil {
+	}
+	if err := h.app.RemoteManager.Seed(data, req.Page.Manifest, subtitles); err != nil {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
 		return
+	}
+	if req.PageSubtitle != nil {
+		stored, _, err := h.app.RemoteManager.CachedExtraction(req.Page.PageURL)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+			return
+		}
+		req.SubtitlePath = "external:" + remote.PageSubtitlePath(req.Page.PageURL, stored.Subtitles[*req.PageSubtitle])
 	}
 
 	deviceIP := req.DeviceIP

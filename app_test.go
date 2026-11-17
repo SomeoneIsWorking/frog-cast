@@ -471,6 +471,63 @@ func TestPlayExtractedCastsFromTheControllersExtraction(t *testing.T) {
 	}
 }
 
+func TestPlayExtractedCastsThePagesSubtitle(t *testing.T) {
+	a, _ := newTestApp(t)
+	a.RemoteManager = remote.NewManager(true)
+	page := "https://example.test/watch/43/"
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg0.ts\n#EXT-X-ENDLIST\n"))
+	}))
+	defer cdn.Close()
+
+	vtt := "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nMerhaba\n"
+	pick := 1
+	body, err := json.Marshal(castapi.PlayExtractedRequest{
+		Page: castapi.ExtractedPage{
+			PageURL:     page,
+			Title:       "Film 43",
+			ManifestURL: cdn.URL + "/43/master.m3u8",
+			Manifest:    "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\nv/720.m3u8\n",
+			Subtitles: []castapi.PageSubtitle{
+				{Label: "en", Content: "WEBVTT\n"},
+				{Label: "tr", Content: vtt},
+			},
+		},
+		DeviceIP:     "192.168.1.50",
+		PageSubtitle: &pick,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	NewHTTPServer(a).handlePlayExtracted(rec, httptest.NewRequest(http.MethodPost, "/play-extracted", bytes.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("play-extracted: %d %s", rec.Code, rec.Body)
+	}
+
+	path, ok := strings.CutPrefix(a.streamOptions.Subtitle.Path, "external:")
+	if !ok {
+		t.Fatalf("subtitle path = %q, want the page's file", a.streamOptions.Subtitle.Path)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != vtt {
+		t.Fatalf("subtitle file = %q, %v", got, err)
+	}
+
+	info, err := a.GetTrackDisplayInfo(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var labels []string
+	for _, s := range info.SubtitleTracks {
+		if s.Path == a.streamOptions.Subtitle.Path {
+			labels = append(labels, s.Label)
+		}
+	}
+	if len(labels) != 1 || labels[0] != "Page: tr" {
+		t.Fatalf("track info subtitles = %+v", info.SubtitleTracks)
+	}
+}
+
 func TestPlayURLWithoutScriptOrCacheNeedsExtraction(t *testing.T) {
 	a, _ := newTestApp(t)
 	a.RemoteManager = remote.NewManager(true)

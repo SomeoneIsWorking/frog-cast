@@ -191,9 +191,12 @@ As built:
   resend replaces expired links. The cast store routes web URLs to it whenever
   the active source is remote. The URL box loads the remote's cast targets
   for the Cast Options panel.
-- Subtitles aren't sent: the per-page cache doesn't keep extracted subtitles
-  on either path yet (`doExtraction` drops them). Once it does, they belong
-  in `ExtractedPage` and `storeExtraction`.
+- The VTT files a page loads are kept in its cache folder
+  (`page_subtitle_N.vtt`, listed in `ExtractionData.Subtitles`) and offered in
+  the track info as `external:` sources labelled "Page: …". `ExtractedPage`
+  carries their contents; the controller names its pick by index
+  (`pageSubtitle`), and the server casts its own copy
+  (`TestPlayExtractedCastsThePagesSubtitle`).
 - `/play` and `/play-url` answer 409 with `needsExtraction: true` for a web
   page that has neither a cached extraction nor a Lua script, instead of
   opening a browser on the server's screen. `castapi` turns that into

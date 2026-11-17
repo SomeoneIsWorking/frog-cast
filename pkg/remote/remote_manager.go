@@ -24,6 +24,20 @@ type ExtractionData struct {
 	Headers     map[string]string
 	Title       string
 	ManifestURL string
+	// Subtitles are the VTT files the page loaded beside its stream.
+	Subtitles []PageSubtitle
+}
+
+// PageSubtitle is a subtitle file kept in the page's cache folder.
+type PageSubtitle struct {
+	Label string
+	File  string // name within the page's cache folder
+}
+
+// PageSubtitleContent is a subtitle a page loaded, as fetched.
+type PageSubtitleContent struct {
+	Label   string
+	Content string
 }
 
 func (m *RemoteManager) GetDownloadStatus(url string, mediaType string, track int) (*DownloadStatusQeuryResponse, error) {
@@ -145,6 +159,11 @@ func (m *RemoteManager) HasExtraction(pageURL string) bool {
 	return exists || filehelper.Exists(extractionFile(pageURL))
 }
 
+// PageSubtitlePath is where a page's subtitle file is kept.
+func PageSubtitlePath(pageURL string, sub PageSubtitle) string {
+	return filepath.Join(folders.Video(pageURL), sub.File)
+}
+
 // CachedExtraction returns the page's stored extraction and its manifest.
 func (m *RemoteManager) CachedExtraction(pageURL string) (*ExtractionData, string, error) {
 	data, err := filehelper.ReadJson[ExtractionData](extractionFile(pageURL))
@@ -160,14 +179,14 @@ func (m *RemoteManager) CachedExtraction(pageURL string) (*ExtractionData, strin
 
 // Seed stores an extraction made elsewhere (another instance's browser) as
 // if this instance had extracted the page itself.
-func (m *RemoteManager) Seed(data ExtractionData, manifest string) error {
+func (m *RemoteManager) Seed(data ExtractionData, manifest string, subtitles []PageSubtitleContent) error {
 	if _, err := u.Parse(data.ManifestURL); err != nil || data.ManifestURL == "" {
 		return fmt.Errorf("invalid manifest URL %q", data.ManifestURL)
 	}
 	if _, err := hls.ParseManifest(manifest); err != nil {
 		return fmt.Errorf("invalid manifest: %w", err)
 	}
-	if err := storeExtraction(&data, manifest); err != nil {
+	if err := storeExtraction(&data, manifest, subtitles); err != nil {
 		return err
 	}
 	// Media loaded from an older extraction may hold expired stream URLs.
@@ -179,10 +198,19 @@ func (m *RemoteManager) Seed(data ExtractionData, manifest string) error {
 	return nil
 }
 
-// storeExtraction writes the per-page cache that GetMedia reads.
-func storeExtraction(data *ExtractionData, manifest string) error {
+// storeExtraction writes the per-page cache that GetMedia reads, with the
+// page's subtitle files.
+func storeExtraction(data *ExtractionData, manifest string, subtitles []PageSubtitleContent) error {
 	if err := filehelper.WriteFile(hlsFile(data.URL), []byte(manifest)); err != nil {
 		return err
+	}
+	data.Subtitles = nil
+	for i, sub := range subtitles {
+		stored := PageSubtitle{Label: sub.Label, File: fmt.Sprintf("page_subtitle_%d.vtt", i)}
+		if err := filehelper.WriteFile(PageSubtitlePath(data.URL, stored), []byte(sub.Content)); err != nil {
+			return err
+		}
+		data.Subtitles = append(data.Subtitles, stored)
 	}
 	return filehelper.WriteJson(extractionFile(data.URL), data)
 }
@@ -208,7 +236,11 @@ func (*RemoteManager) doExtraction(url *u.URL) (*ExtractionData, *hls.ManifestPl
 		Title:       extraction.Title,
 		ManifestURL: url.ResolveReference(extraction.URL).String(),
 	}
-	if err := storeExtraction(extractionData, extraction.Manifest); err != nil {
+	subtitles := make([]PageSubtitleContent, 0, len(extraction.Subtitles))
+	for _, sub := range extraction.Subtitles {
+		subtitles = append(subtitles, PageSubtitleContent{Label: sub.Label, Content: sub.Content})
+	}
+	if err := storeExtraction(extractionData, extraction.Manifest, subtitles); err != nil {
 		return nil, nil, err
 	}
 	return extractionData, manifest, nil

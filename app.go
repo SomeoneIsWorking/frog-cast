@@ -135,13 +135,22 @@ func (a *App) getMediaURL() string {
 func (a *App) GetTrackDisplayInfo(fileNameOrUrl string) (*TrackDisplayInfo, error) {
 	trackInfo := &hls.ManifestPlaylist{}
 	var err error
-	remote := isWebURL(fileNameOrUrl)
-	if remote {
+	var pageSubtitles []SubtitleDisplayItem
+	webPage := isWebURL(fileNameOrUrl)
+	if webPage {
 		mediaManager, err := a.RemoteManager.GetMedia(fileNameOrUrl)
 		if err != nil {
 			return nil, err
 		}
 		trackInfo = mediaManager.Manifest
+		if data, _, err := a.RemoteManager.CachedExtraction(fileNameOrUrl); err == nil {
+			for _, sub := range data.Subtitles {
+				pageSubtitles = append(pageSubtitles, SubtitleDisplayItem{
+					Path:  "external:" + remote.PageSubtitlePath(fileNameOrUrl, sub),
+					Label: "Page: " + sub.Label,
+				})
+			}
+		}
 	} else {
 		trackInfo, err = ffmpeg.GetMediaTrackInfo(fileNameOrUrl)
 	}
@@ -165,9 +174,10 @@ func (a *App) GetTrackDisplayInfo(fileNameOrUrl string) (*TrackDisplayInfo, erro
 			Label: fmt.Sprintf("Embedded: %s", sub.Name),
 		})
 	}
+	subtitleItems = append(subtitleItems, pageSubtitles...)
 
 	nearSubtitle := ""
-	if !remote {
+	if !webPage {
 		// Prefer an existing translation for the default target language so it
 		// is auto-selected; otherwise fall back to a sibling subtitle file.
 		lang := a.settingsStore.Get().DefaultTranslationLanguage

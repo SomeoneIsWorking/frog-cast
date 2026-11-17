@@ -8,9 +8,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"wails-cast/pkg/castapi"
 	"wails-cast/pkg/options"
+	"wails-cast/pkg/remote"
 )
 
 type CastInstance = castapi.CastInstance
@@ -121,7 +123,7 @@ func (a *App) RemotePlayExtracted(base, token, pageURL, deviceIp string, opts Re
 	if err != nil {
 		return nil, err
 	}
-	return castapi.New(base, token).PlayExtracted(castapi.PlayExtractedRequest{
+	req := castapi.PlayExtractedRequest{
 		Page: castapi.ExtractedPage{
 			PageURL:     pageURL,
 			Title:       data.Title,
@@ -132,5 +134,20 @@ func (a *App) RemotePlayExtracted(base, token, pageURL, deviceIp string, opts Re
 		},
 		DeviceIP:    deviceIp,
 		PlayOptions: opts,
-	})
+	}
+	// The page's subtitle files go along; a picked one is named by index,
+	// since the remote keeps its copy at its own path.
+	for i, sub := range data.Subtitles {
+		path := remote.PageSubtitlePath(pageURL, sub)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		req.Page.Subtitles = append(req.Page.Subtitles, castapi.PageSubtitle{Label: sub.Label, Content: string(content)})
+		if opts.SubtitlePath == "external:"+path {
+			req.PageSubtitle = &i
+			req.SubtitlePath = ""
+		}
+	}
+	return castapi.New(base, token).PlayExtracted(req)
 }

@@ -220,11 +220,20 @@ type ExtractedPage struct {
 	Manifest    string            `json:"manifest"`
 	Headers     map[string]string `json:"headers"`
 	Cookies     map[string]string `json:"cookies"`
+	Subtitles   []PageSubtitle    `json:"subtitles,omitempty"`
+}
+
+// PageSubtitle is a VTT subtitle a web page loaded beside its stream.
+type PageSubtitle struct {
+	Label   string `json:"label"`
+	Content string `json:"content"`
 }
 
 // PlayExtractedRequest is the body of POST /play-extracted.
 type PlayExtractedRequest struct {
 	Page     ExtractedPage `json:"page"`
 	DeviceIP string        `json:"deviceIp"` // "local" = the instance itself
+	// PageSubtitle picks one of Page.Subtitles, in place of SubtitlePath.
+	PageSubtitle *int `json:"pageSubtitle,omitempty"`
 	PlayOptions
 }
