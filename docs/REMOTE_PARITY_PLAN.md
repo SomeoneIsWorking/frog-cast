@@ -129,8 +129,9 @@ provide defaults for casts that controller starts.
 As built: the offset lives in `HistoryItem.SubtitleDelaySeconds` on the
 casting instance. `UpdateSubtitleSettings` saves it and `castWithStyle`
 applies it, and the unused global `Settings.SubtitleDelaySeconds` is gone.
-Offsets saved in a controller's `localStorage` before this aren't carried
-over. `/play` and `/play-url` take the starting controller's style
+There was nothing to carry over from the old `localStorage` offsets: the
+Linux app's WebKit data directory never held a localStorage database, so they
+didn't outlive a restart. `/play` and `/play-url` take the starting controller's style
 (`PlayOptions.Subtitle`: size, bold, italic, burn-in); without it the casting
 instance uses its own settings. The subtitle popover and the mobile dialog
 show the running cast's values from `state.selection`. A size change from
