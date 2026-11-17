@@ -24,11 +24,15 @@ func TestVariantFor(t *testing.T) {
 	}
 }
 
-func TestManifestVariants(t *testing.T) {
-	master := "#EXTM3U\n" +
-		"#EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=3200x1800\nhigh.m3u8\n" +
-		"#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\nmid.m3u8\n"
-	if got := variantFor(manifestVariants(master), 1080); got != 1 {
-		t.Errorf("1080p cap picks %d, want 1", got)
+func TestVideoLabel(t *testing.T) {
+	cases := map[castapi.VideoTrackDisplayItem]string{
+		{Index: 0, Resolution: "1920x1036", Codecs: "av01.0.08M.08,mp4a.40.2"}: "1036p · AV1",
+		{Index: 1, Resolution: "1280x720", Codecs: "mp4a.40.2,avc1.64001f"}:    "720p · H.264",
+		{Index: 2}: "Track 2",
+	}
+	for track, want := range cases {
+		if got := videoLabel(track); got != want {
+			t.Errorf("videoLabel(%+v) = %q, want %q", track, got, want)
+		}
 	}
 }

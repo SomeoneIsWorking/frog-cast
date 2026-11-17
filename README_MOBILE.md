@@ -48,15 +48,16 @@ The launcher icon is the desktop app's (`build/appicon.png`).
   tree. An episode opens the play sheet: cast target (remembered), audio,
   subtitles (the file beside the episode is picked by default) and quality.
 - **Web page** (from Library, or Share › Frog Cast Remote in a browser): cast
-  a page link; recent pages are kept on the phone. Resolution (remembered,
-  default up to 1080p) picks the tallest variant of the page's playlist within
-  it: every variant is re-encoded at its own size, and many TVs refuse more
-  than 1080p. The app closes when it
+  a page link; recent pages are kept on the phone. Opening a page shows its
+  **Cast options**: target, video (the tallest variant up to 1080p is picked
+  first, since every variant is re-encoded at its own size and many TVs
+  refuse more), audio, subtitles and quality, with a download bar and button
+  per track to pre-download it to the instance. The app closes when it
   leaves the screen, since Fyne's activity ignores a share sent to a running
   app. The instance extracts pages it has a script for. For any other page
   it answers 409, and the page opens full screen on the phone: tap play, and
   once it requests its stream the page closes and the stream, its headers,
-  cookies and subtitles go to `/play-extracted`. Back closes the page and
+  cookies and subtitles go to `/extracted`. Back closes the page and
   cancels. This needs Android 8 and a WebView with document-start scripts
   (any current one).
 - **Playing**: the running cast, polled every second while on screen: seek,

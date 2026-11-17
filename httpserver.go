@@ -12,7 +12,8 @@ package main
 //   GET  /track-info    – video/audio/subtitle tracks for a media item
 //   POST /play          – play a library item by id (+ track/subtitle/quality)
 //   POST /play-url      – play an arbitrary URL (+ track/subtitle/quality)
-//   POST /play-extracted – play a web page a controller already extracted
+//   POST /extracted     – store a web page a controller extracted; returns its tracks
+//   GET/POST /download  – a web page track's segment download: status, start/stop
 //   POST /control       – transport: pause/resume/stop/seek/volume/mute
 //   POST /tracks        – switch the running cast's tracks/quality/subtitle source
 //   POST /translate     – start a subtitle translation for a media item
@@ -50,7 +51,6 @@ import (
 	"frog-cast/pkg/castapi"
 	"frog-cast/pkg/events"
 	"frog-cast/pkg/options"
-	"frog-cast/pkg/remote"
 )
 
 // mdnsService is the mDNS/Bonjour service type the desktop advertises so the
@@ -206,7 +206,8 @@ func (h *HTTPServer) Start(port int) error {
 	mux.HandleFunc("/track-info", h.handleTrackInfo)
 	mux.HandleFunc("/play", h.handlePlay)
 	mux.HandleFunc("/play-url", h.handlePlayURL)
-	mux.HandleFunc("/play-extracted", h.handlePlayExtracted)
+	mux.HandleFunc("/extracted", h.handleExtracted)
+	mux.HandleFunc("/download", h.handleDownload)
 	mux.HandleFunc("/control", h.handleControl)
 	mux.HandleFunc("/translate", h.handleTranslate)
 	mux.HandleFunc("/translate-status", h.handleTranslateStatus)
@@ -515,71 +516,13 @@ func (h *HTTPServer) handlePlayURL(w http.ResponseWriter, r *http.Request) {
 // writeCastError answers a failed cast. A web page this instance can't
 // extract without a browser on its screen (no script, or its cached stream
 // expired) is 409 with needsExtraction: the client extracts it and uses
-// /play-extracted.
+// /extracted.
 func writeCastError(w http.ResponseWriter, err error) {
 	if errors.Is(err, castapi.ErrNeedsExtraction) {
 		writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error(), NeedsExtraction: true})
 		return
 	}
 	writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
-}
-
-// handlePlayExtracted casts a web page whose stream a controller found in its
-// own browser: the result is stored as this instance's extraction of the page,
-// then cast like any other.
-func (h *HTTPServer) handlePlayExtracted(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "method not allowed"})
-		return
-	}
-	var req castapi.PlayExtractedRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid JSON body"})
-		return
-	}
-	if !isWebURL(req.Page.PageURL) {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "page.pageUrl must be an http(s) URL"})
-		return
-	}
-	if req.PageSubtitle != nil && (*req.PageSubtitle < 0 || *req.PageSubtitle >= len(req.Page.Subtitles)) {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "pageSubtitle out of range"})
-		return
-	}
-	subtitles := make([]remote.PageSubtitleContent, 0, len(req.Page.Subtitles))
-	for _, sub := range req.Page.Subtitles {
-		subtitles = append(subtitles, remote.PageSubtitleContent{Label: sub.Label, Content: sub.Content})
-	}
-	data := remote.ExtractionData{
-		URL:         req.Page.PageURL,
-		Title:       req.Page.Title,
-		ManifestURL: req.Page.ManifestURL,
-		Headers:     req.Page.Headers,
-		Cookies:     req.Page.Cookies,
-	}
-	if err := h.app.RemoteManager.Seed(data, req.Page.Manifest, subtitles); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorResponse{Error: err.Error()})
-		return
-	}
-	if req.PageSubtitle != nil {
-		stored, _, err := h.app.RemoteManager.CachedExtraction(req.Page.PageURL)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
-			return
-		}
-		req.SubtitlePath = "external:" + remote.PageSubtitlePath(req.Page.PageURL, stored.Subtitles[*req.PageSubtitle])
-	}
-
-	deviceIP := req.DeviceIP
-	if deviceIP == "" {
-		deviceIP = "local"
-	}
-	state, err := h.app.castWithStyle(deviceIP, req.Page.PageURL, h.castOptions(req.PlayOptions), req.Subtitle, false)
-	if err != nil {
-		logger.Error("Remote API: play-extracted failed", "url", req.Page.PageURL, "error", err)
-		writeCastError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, playResponse{OK: true, State: *state})
 }
 
 // handleDevices runs a synchronous discovery and returns the available cast
@@ -666,12 +609,8 @@ func (h *HTTPServer) handleTrackInfo(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "id query parameter is required"})
 		return
 	}
-	// A page needing a visible browser is the controller's to extract.
-	if isWebURL(id) {
-		if err := h.app.readyPage(id, 0, 0, false); err != nil {
-			writeCastError(w, err)
-			return
-		}
+	if !h.readyWebPage(w, id) {
+		return
 	}
 	info, err := h.app.GetTrackDisplayInfo(id)
 	if err != nil {

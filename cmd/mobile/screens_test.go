@@ -89,8 +89,12 @@ func TestRenderScreens(t *testing.T) {
 	s.library.pages.back()
 	s.library.pages.back()
 	s.web.remember(webPage{URL: "https://hlsjs.video-dev.org/demo/", Title: "hls.js demo"})
-	s.web.share("https://www.example.test/film/sevimli-canavarlar-monsters-inc-2/")
+	s.library.pages.push("Web page", s.web.content)
+	s.web.link.SetText("https://www.example.test/film/sevimli-canavarlar-monsters-inc-2/")
 	snap("10-web")
+	// A page the instance has extracted before; reading its tracks is read-only.
+	s.web.openPage("https://www.fullhdfilmizlesene.now/film/sevimli-canavarlar-monsters-inc-2/")
+	snap("11-cast-options")
 	u.closeSession()
 }
 

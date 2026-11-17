@@ -103,6 +103,52 @@ func cardList(length func() int, create func() fyne.CanvasObject, update func(wi
 	return l
 }
 
+// thinBar is a slim progress bar: an accent fill over a raised track.
+type thinBar struct {
+	widget.BaseWidget
+	value float64
+	track *canvas.Rectangle
+	fill  *canvas.Rectangle
+}
+
+func newThinBar() *thinBar {
+	b := &thinBar{track: canvas.NewRectangle(colorRaised), fill: canvas.NewRectangle(colorAccent)}
+	b.track.CornerRadius = 3
+	b.fill.CornerRadius = 3
+	b.ExtendBaseWidget(b)
+	return b
+}
+
+// SetValue sets the filled share, 0 to 1.
+func (b *thinBar) SetValue(v float64) {
+	b.value = min(max(v, 0), 1)
+	b.Refresh()
+}
+
+func (b *thinBar) CreateRenderer() fyne.WidgetRenderer {
+	return &thinBarRenderer{b: b}
+}
+
+type thinBarRenderer struct{ b *thinBar }
+
+func (r *thinBarRenderer) Layout(size fyne.Size) {
+	r.b.track.Resize(size)
+	r.b.fill.Resize(fyne.NewSize(size.Width*float32(r.b.value), size.Height))
+}
+
+func (r *thinBarRenderer) MinSize() fyne.Size { return fyne.NewSize(40, 6) }
+
+func (r *thinBarRenderer) Refresh() {
+	r.Layout(r.b.Size())
+	canvas.Refresh(r.b)
+}
+
+func (r *thinBarRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.b.track, r.b.fill}
+}
+
+func (r *thinBarRenderer) Destroy() {}
+
 // heading1 is a screen title.
 func heading1(text string) *widget.Label {
 	l := widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})

@@ -78,11 +78,7 @@ func (s *session) showTracksSheet(st *castapi.PlaybackState) {
 func (s *session) tracksSheet(sel castapi.CastSelection, info *castapi.TrackDisplayInfo) {
 	var videoLabels []string
 	for _, v := range info.VideoTracks {
-		label := v.Resolution
-		if label == "" {
-			label = fmt.Sprintf("Track %d", v.Index)
-		}
-		videoLabels = append(videoLabels, label)
+		videoLabels = append(videoLabels, videoLabel(v))
 	}
 	video := widget.NewSelect(videoLabels, nil)
 	for i, v := range info.VideoTracks {

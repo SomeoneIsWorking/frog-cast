@@ -22,6 +22,17 @@ export namespace castapi {
 	    burnIn: boolean;
 	    ignoreClosedCaptions: boolean;
 	}
+	export interface DownloadRequest {
+	    url: string;
+	    type: string;
+	    track: number;
+	    start: boolean;
+	}
+	export interface DownloadStatus {
+	    status: string;
+	    done: number;
+	    total: number;
+	}
 	export interface LibraryEpisode {
 	    path: string;
 	    name: string;

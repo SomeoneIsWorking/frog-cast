@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 )
 
 // ErrNeedsExtraction: the instance can't extract the page without a browser
-// someone can see; extract it here and use PlayExtracted.
+// someone can see; extract it here, SendExtracted, then Play.
 var ErrNeedsExtraction = errors.New("the page needs extracting in a visible browser")
 
 type Client struct {
@@ -264,11 +265,32 @@ func (c *Client) ChangeTracks(change TrackChange) (*PlaybackState, error) {
 	return &resp.State, nil
 }
 
-// PlayExtracted casts a web page that was extracted on this side.
-func (c *Client) PlayExtracted(req PlayExtractedRequest) (*PlaybackState, error) {
-	var resp PlayResponse
-	if err := c.do(http.MethodPost, "/play-extracted", req, &resp); err != nil {
+// SendExtracted gives the instance a web page extracted on this side, and
+// returns the page's tracks; cast it with Play.
+func (c *Client) SendExtracted(page ExtractedPage) (*TrackDisplayInfo, error) {
+	var info TrackDisplayInfo
+	if err := c.do(http.MethodPost, "/extracted", page, &info); err != nil {
 		return nil, err
 	}
-	return &resp.State, nil
+	return &info, nil
+}
+
+// SetDownload starts or stops downloading one track of a web page on the
+// instance.
+func (c *Client) SetDownload(req DownloadRequest) (*DownloadStatus, error) {
+	var status DownloadStatus
+	if err := c.do(http.MethodPost, "/download", req, &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
+// Download reports one web page track's download on the instance.
+func (c *Client) Download(pageURL, kind string, track int) (*DownloadStatus, error) {
+	var status DownloadStatus
+	q := url.Values{"url": {pageURL}, "type": {kind}, "track": {strconv.Itoa(track)}}
+	if err := c.do(http.MethodGet, "/download?"+q.Encode(), nil, &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
 }

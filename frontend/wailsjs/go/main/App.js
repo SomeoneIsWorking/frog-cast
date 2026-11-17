@@ -158,6 +158,10 @@ export function RemoteDevices(arg1, arg2) {
   return window['go']['main']['App']['RemoteDevices'](arg1, arg2);
 }
 
+export function RemoteDownload(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['RemoteDownload'](arg1, arg2, arg3, arg4, arg5);
+}
+
 export function RemoteIdentify(arg1, arg2, arg3) {
   return window['go']['main']['App']['RemoteIdentify'](arg1, arg2, arg3);
 }
@@ -186,16 +190,20 @@ export function RemotePlay(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['RemotePlay'](arg1, arg2, arg3, arg4, arg5);
 }
 
-export function RemotePlayExtracted(arg1, arg2, arg3, arg4, arg5) {
-  return window['go']['main']['App']['RemotePlayExtracted'](arg1, arg2, arg3, arg4, arg5);
-}
-
 export function RemoteSeasonCancel(arg1, arg2) {
   return window['go']['main']['App']['RemoteSeasonCancel'](arg1, arg2);
 }
 
 export function RemoteSeasonStatus(arg1, arg2) {
   return window['go']['main']['App']['RemoteSeasonStatus'](arg1, arg2);
+}
+
+export function RemoteSendExtracted(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RemoteSendExtracted'](arg1, arg2, arg3);
+}
+
+export function RemoteSetDownload(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RemoteSetDownload'](arg1, arg2, arg3);
 }
 
 export function RemoteState(arg1, arg2) {

@@ -153,7 +153,7 @@ extracts, in its own browser where the user can click play, and sends the
 
 - **Controller side:** run `extractor.Extract(pageURL)` locally, exactly as a
   local cast does (scripted sites stay headless).
-- **New endpoint `POST /play-extracted`** with the extraction result: page
+- **New endpoint `POST /extracted`** (first built as `/play-extracted`) with the extraction result: page
   URL, title, manifest URL, manifest body, headers, cookies, subtitles (URL,
   label and VTT content, since the server may not be able to fetch them
   itself), plus `deviceIp` and the play options.
@@ -163,7 +163,7 @@ extracts, in its own browser where the user can click play, and sends the
   `CastToDevice(pageURL, …)`. From there nothing differs from a local
   extraction, and history entries stay keyed by the page URL.
 - **UI:** when the active source is a remote instance, the desktop URL box
-  extracts locally, then calls a `RemotePlayExtracted` binding instead of
+  extracts locally, then calls a `RemoteSendExtracted` binding instead of
   casting locally. `/play-url` stays for clients that can't run a browser,
   such as the mobile app, and only works for scripted sites.
 
@@ -183,36 +183,69 @@ Things to check while building it:
 
 As built:
 
-- `RemotePlayExtracted` (desktop binding) extracts through the local
+- `RemoteSendExtracted` (desktop binding) extracts through the local
   `RemoteManager` (the same cache a local cast fills), reads it back with
-  `CachedExtraction`, and posts it to `/play-extracted`. The server stores it
-  with `RemoteManager.Seed`. Seed shares `storeExtraction` with server-side
-  extraction, and it drops an in-memory media whose manifest URL differs, so a
-  resend replaces expired links. The cast store routes web URLs to it whenever
-  the active source is remote. The URL box loads the remote's cast targets
-  for the Cast Options panel.
+  `CachedExtraction`, and posts it to `POST /extracted` when the Cast Options
+  panel opens. The server stores it with `RemoteManager.Seed` and answers the
+  page's track info, so the panel shows the server's tracks and the cast is an
+  ordinary `/play` (`TestExtractedPageCastsFromTheControllersExtraction`).
+  Seed shares `storeExtraction` with server-side extraction, and it drops an
+  in-memory media whose manifest URL differs, so a resend replaces expired
+  links. The cast store sends web URLs there whenever the active source is
+  remote. The URL box loads the remote's cast targets for the Cast Options
+  panel.
 - The VTT files a page loads are kept in its cache folder
   (`page_subtitle_N.vtt`, listed in `ExtractionData.Subtitles`) and offered in
   the track info as `external:` sources labelled "Page: …". `ExtractedPage`
-  carries their contents; the controller names its pick by index
-  (`pageSubtitle`), and the server casts its own copy
-  (`TestPlayExtractedCastsThePagesSubtitle`).
-- `/play` and `/play-url` answer 409 with `needsExtraction: true` for a web
-  page that has neither a cached extraction nor a Lua script, instead of
-  opening a browser on the server's screen (`App.readyPage`). `castapi` turns that into
-  `ErrNeedsExtraction`.
+  carries their contents, and the track info `/extracted` answers lists the
+  server's copies, which the controller picks by path
+  (`TestExtractedPageOffersItsSubtitles`).
+- `/play`, `/play-url`, `/track-info` and `/download` answer 409 with
+  `needsExtraction: true` for a web page that has neither a cached extraction
+  nor a Lua script, instead of opening a browser on the server's screen
+  (`App.readyPage`, through `HTTPServer.readyWebPage`). `castapi` turns that
+  into `ErrNeedsExtraction`.
 - Expired links are caught before casting. `castWithStyle` (via `readyPage`)
   probes the first segment not yet on disk of the video and audio tracks the
   cast will play (`RemoteManager.DropIfStale`); when it doesn't load, the
-  page's cache folder is dropped. The desktop then extracts again in its
-  browser; `/play`, `/play-url` and `/play-extracted` answer 409 with
-  `needsExtraction` and the reason (`TestPlayURLWithExpiredStreamNeedsExtraction`).
-  A fully downloaded page still plays offline. `RemotePlayExtracted` checks the
-  controller's own cache the same way before sending it, and `Seed` drops a
-  page's cached track playlists when the resent links differ
+  page's cache folder is dropped and the controller extracts again
+  (`TestPlayURLWithExpiredStreamNeedsExtraction`). A fully downloaded page
+  still plays offline. `RemoteSendExtracted` checks the controller's own
+  cache the same way before sending it, and `Seed` drops a page's cached
+  track playlists when the resent links differ
   (`TestSeedWithNewLinksDropsCachedTrackPlaylists`).
 - Not yet checked: CDNs that bind tokens to the extracting client's IP or
   cookies (needs real sites; see the manual checks).
+
+## Phase 8: Cast Options and downloads on the casting instance
+
+The controller picks a web page's tracks from the casting instance's own
+track info, and pre-downloads them there, the way the desktop's Cast Options
+panel does for a local cast.
+
+- `GET/POST /download` (`pageapi.go`): a page track's download status
+  (`status`, `done`, `total` segments), and start/stop
+  (`TestDownloadFetchesAPageTrack`). `castapi.Client.Download`/`SetDownload`,
+  desktop bindings `RemoteDownload`/`RemoteSetDownload`.
+- Desktop: the downloads store runs on the Cast Options panel's source,
+  polling a remote every 2 s while a download runs; local downloads still
+  report by event.
+- Mobile: opening a web page shows **Cast options**: target, video (labelled
+  by height and codec; 1080p or lower is picked first, since TVs refuse
+  taller re-encodes), audio, subtitles and quality, each track with a
+  download bar and button.
+
+## Parity left
+
+What the desktop does that a controller still can't do on another instance:
+
+- Cache: stats, clearing transcoded or all video cache (`ClearCache`,
+  `GetCacheStats`, `Delete*Cache`).
+- History: list, replay, remove (`GetHistory`, `RemoveFromHistory`).
+- Settings beyond the subtitle style, quality and language `/settings` has.
+- Single-file subtitle tools: export embedded subtitles, the translation
+  prompt and pasted translations.
+- The Downloads panel lists only downloads started from this controller.
 
 ## Testing
 

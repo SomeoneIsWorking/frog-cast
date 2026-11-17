@@ -109,14 +109,15 @@ func (a *App) RemoteChangeTracks(base, token string, change TrackChange) (*Playb
 	return castapi.New(base, token).ChangeTracks(change)
 }
 
-// RemotePlayExtracted casts a web page through another instance, extracting
-// it here first: in this machine's browser, where someone can click play on a
-// site without a script.
-func (a *App) RemotePlayExtracted(base, token, pageURL, deviceIp string, opts RemotePlayOptions) (*PlaybackState, error) {
+// RemoteSendExtracted gives another instance a web page extracted here, in
+// this machine's browser where someone can click play on a site without a
+// script, and returns the page's tracks as that instance has them. The page
+// is then cast with RemotePlay.
+func (a *App) RemoteSendExtracted(base, token, pageURL string) (*TrackDisplayInfo, error) {
 	if !isWebURL(pageURL) {
 		return nil, fmt.Errorf("not a web page: %s", pageURL)
 	}
-	if err := a.readyPage(pageURL, opts.VideoTrack, opts.AudioTrack, true); err != nil {
+	if err := a.readyPage(pageURL, 0, 0, true); err != nil {
 		return nil, err
 	}
 	if _, err := a.RemoteManager.GetMedia(pageURL); err != nil {
@@ -126,31 +127,31 @@ func (a *App) RemotePlayExtracted(base, token, pageURL, deviceIp string, opts Re
 	if err != nil {
 		return nil, err
 	}
-	req := castapi.PlayExtractedRequest{
-		Page: castapi.ExtractedPage{
-			PageURL:     pageURL,
-			Title:       data.Title,
-			ManifestURL: data.ManifestURL,
-			Manifest:    manifest,
-			Headers:     data.Headers,
-			Cookies:     data.Cookies,
-		},
-		DeviceIP:    deviceIp,
-		PlayOptions: opts,
+	page := castapi.ExtractedPage{
+		PageURL:     pageURL,
+		Title:       data.Title,
+		ManifestURL: data.ManifestURL,
+		Manifest:    manifest,
+		Headers:     data.Headers,
+		Cookies:     data.Cookies,
 	}
-	// The page's subtitle files go along; a picked one is named by index,
-	// since the remote keeps its copy at its own path.
-	for i, sub := range data.Subtitles {
-		path := remote.PageSubtitlePath(pageURL, sub)
-		content, err := os.ReadFile(path)
+	for _, sub := range data.Subtitles {
+		content, err := os.ReadFile(remote.PageSubtitlePath(pageURL, sub))
 		if err != nil {
 			return nil, err
 		}
-		req.Page.Subtitles = append(req.Page.Subtitles, castapi.PageSubtitle{Label: sub.Label, Content: string(content)})
-		if opts.SubtitlePath == "external:"+path {
-			req.PageSubtitle = &i
-			req.SubtitlePath = ""
-		}
+		page.Subtitles = append(page.Subtitles, castapi.PageSubtitle{Label: sub.Label, Content: string(content)})
 	}
-	return castapi.New(base, token).PlayExtracted(req)
+	return castapi.New(base, token).SendExtracted(page)
+}
+
+// RemoteSetDownload starts or stops downloading a web page track on another
+// instance.
+func (a *App) RemoteSetDownload(base, token string, req castapi.DownloadRequest) (*castapi.DownloadStatus, error) {
+	return castapi.New(base, token).SetDownload(req)
+}
+
+// RemoteDownload reports a web page track's download on another instance.
+func (a *App) RemoteDownload(base, token, pageURL, kind string, track int) (*castapi.DownloadStatus, error) {
+	return castapi.New(base, token).Download(pageURL, kind, track)
 }

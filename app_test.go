@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -418,12 +419,28 @@ func TestSubtitleOffsetIsKeptPerMediaByTheCastingInstance(t *testing.T) {
 	}
 }
 
-// A web page extracted on a controller is cast from the stored result, with
-// no extraction on the casting instance and the controller's headers used
-// against the CDN.
-func TestPlayExtractedCastsFromTheControllersExtraction(t *testing.T) {
+// postJSON runs one remote API handler on a JSON body.
+func postJSON(t *testing.T, handler http.HandlerFunc, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	handler(rec, httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s: %d %s", path, rec.Code, rec.Body)
+	}
+	return rec
+}
+
+// A web page extracted on a controller is stored, its tracks offered, and
+// then cast from the stored result with no extraction on the casting
+// instance and the controller's headers used against the CDN.
+func TestExtractedPageCastsFromTheControllersExtraction(t *testing.T) {
 	a, fake := newTestApp(t)
 	a.RemoteManager = remote.NewManager(true)
+	h := NewHTTPServer(a)
 	page := "https://example.test/watch/42/"
 
 	var referer string
@@ -433,48 +450,43 @@ func TestPlayExtractedCastsFromTheControllersExtraction(t *testing.T) {
 	}))
 	defer cdn.Close()
 
-	body, err := json.Marshal(castapi.PlayExtractedRequest{
-		Page: castapi.ExtractedPage{
-			PageURL:     page,
-			Title:       "Film 42",
-			ManifestURL: cdn.URL + "/42/master.m3u8",
-			Manifest: "#EXTM3U\n" +
-				"#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\n" +
-				"v/720.m3u8\n",
-			Headers: map[string]string{"Referer": page},
-		},
-		DeviceIP: "192.168.1.50",
+	rec := postJSON(t, h.handleExtracted, "/extracted", castapi.ExtractedPage{
+		PageURL:     page,
+		Title:       "Film 42",
+		ManifestURL: cdn.URL + "/42/master.m3u8",
+		Manifest: "#EXTM3U\n" +
+			"#EXT-X-STREAM-INF:BANDWIDTH=6000000,RESOLUTION=3200x1800\nv/1800.m3u8\n" +
+			"#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\nv/720.m3u8\n",
+		Headers: map[string]string{"Referer": page},
 	})
-	if err != nil {
+	var info castapi.TrackDisplayInfo
+	if err := json.Unmarshal(rec.Body.Bytes(), &info); err != nil {
 		t.Fatal(err)
 	}
-	if a.RemoteManager.HasExtraction(page) {
-		t.Fatal("extraction present before seeding")
+	if len(info.VideoTracks) != 2 || info.VideoTracks[1].Resolution != "1280x720" {
+		t.Fatalf("tracks = %+v", info.VideoTracks)
+	}
+	if len(fake.loads) != 0 {
+		t.Fatal("storing an extraction cast it")
 	}
 
-	rec := httptest.NewRecorder()
-	NewHTTPServer(a).handlePlayExtracted(rec, httptest.NewRequest(http.MethodPost, "/play-extracted", bytes.NewReader(body)))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("play-extracted: %d %s", rec.Code, rec.Body)
-	}
+	postJSON(t, h.handlePlay, "/play", map[string]any{"id": page, "deviceIp": "192.168.1.50", "videoTrack": 1})
 	if referer != page {
 		t.Fatalf("CDN saw Referer %q, want the controller's %q", referer, page)
 	}
-	if len(fake.loads) != 1 {
-		t.Fatalf("loads = %d", len(fake.loads))
+	if len(fake.loads) != 1 || a.streamOptions.VideoTrack != 1 {
+		t.Fatalf("loads = %d, video track = %d", len(fake.loads), a.streamOptions.VideoTrack)
 	}
 	state := a.currentPlaybackState()
 	if state.MediaPath != page || state.MediaName != "Film 42" || state.Duration != 10 {
 		t.Fatalf("state = %+v", state)
 	}
-	if _, _, err := a.RemoteManager.CachedExtraction(page); err != nil {
-		t.Fatalf("extraction not stored for replay: %v", err)
-	}
 }
 
-func TestPlayExtractedCastsThePagesSubtitle(t *testing.T) {
+func TestExtractedPageOffersItsSubtitles(t *testing.T) {
 	a, _ := newTestApp(t)
 	a.RemoteManager = remote.NewManager(true)
+	h := NewHTTPServer(a)
 	page := "https://example.test/watch/43/"
 	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg0.ts\n#EXT-X-ENDLIST\n"))
@@ -482,30 +494,31 @@ func TestPlayExtractedCastsThePagesSubtitle(t *testing.T) {
 	defer cdn.Close()
 
 	vtt := "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nMerhaba\n"
-	pick := 1
-	body, err := json.Marshal(castapi.PlayExtractedRequest{
-		Page: castapi.ExtractedPage{
-			PageURL:     page,
-			Title:       "Film 43",
-			ManifestURL: cdn.URL + "/43/master.m3u8",
-			Manifest:    "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\nv/720.m3u8\n",
-			Subtitles: []castapi.PageSubtitle{
-				{Label: "en", Content: "WEBVTT\n"},
-				{Label: "tr", Content: vtt},
-			},
+	rec := postJSON(t, h.handleExtracted, "/extracted", castapi.ExtractedPage{
+		PageURL:     page,
+		Title:       "Film 43",
+		ManifestURL: cdn.URL + "/43/master.m3u8",
+		Manifest:    "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\nv/720.m3u8\n",
+		Subtitles: []castapi.PageSubtitle{
+			{Label: "en", Content: "WEBVTT\n"},
+			{Label: "tr", Content: vtt},
 		},
-		DeviceIP:     "192.168.1.50",
-		PageSubtitle: &pick,
 	})
-	if err != nil {
+	var info castapi.TrackDisplayInfo
+	if err := json.Unmarshal(rec.Body.Bytes(), &info); err != nil {
 		t.Fatal(err)
 	}
-	rec := httptest.NewRecorder()
-	NewHTTPServer(a).handlePlayExtracted(rec, httptest.NewRequest(http.MethodPost, "/play-extracted", bytes.NewReader(body)))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("play-extracted: %d %s", rec.Code, rec.Body)
+	var pick string
+	for _, s := range info.SubtitleTracks {
+		if s.Label == "Page: tr" {
+			pick = s.Path
+		}
+	}
+	if pick == "" {
+		t.Fatalf("subtitles = %+v", info.SubtitleTracks)
 	}
 
+	postJSON(t, h.handlePlay, "/play", map[string]any{"id": page, "deviceIp": "192.168.1.50", "subtitlePath": pick})
 	path, ok := strings.CutPrefix(a.streamOptions.Subtitle.Path, "external:")
 	if !ok {
 		t.Fatalf("subtitle path = %q, want the page's file", a.streamOptions.Subtitle.Path)
@@ -513,19 +526,36 @@ func TestPlayExtractedCastsThePagesSubtitle(t *testing.T) {
 	if got, err := os.ReadFile(path); err != nil || string(got) != vtt {
 		t.Fatalf("subtitle file = %q, %v", got, err)
 	}
+}
 
-	info, err := a.GetTrackDisplayInfo(page)
-	if err != nil {
+// A controller downloads a page's track into the casting instance's cache.
+func TestDownloadFetchesAPageTrack(t *testing.T) {
+	a, _ := newTestApp(t)
+	a.RemoteManager = remote.NewManager(true)
+	h := NewHTTPServer(a)
+	page := "https://example.test/watch/44/"
+	cdn, _ := expiringCDN(t)
+	seedPage(t, a, page, cdn.URL+"/tok/master.m3u8")
+
+	rec := postJSON(t, h.handleDownload, "/download", castapi.DownloadRequest{URL: page, Type: "video", Track: 0, Start: true})
+	var status castapi.DownloadStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	var labels []string
-	for _, s := range info.SubtitleTracks {
-		if s.Path == a.streamOptions.Subtitle.Path {
-			labels = append(labels, s.Label)
+	if status.Total != 1 {
+		t.Fatalf("status = %+v", status)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for status.Status != "COMPLETED" && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+		get := httptest.NewRecorder()
+		h.handleDownload(get, httptest.NewRequest(http.MethodGet, "/download?type=video&track=0&url="+url.QueryEscape(page), nil))
+		if err := json.Unmarshal(get.Body.Bytes(), &status); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if len(labels) != 1 || labels[0] != "Page: tr" {
-		t.Fatalf("track info subtitles = %+v", info.SubtitleTracks)
+	if status.Status != "COMPLETED" || status.Done != 1 {
+		t.Fatalf("status = %+v", status)
 	}
 }
 

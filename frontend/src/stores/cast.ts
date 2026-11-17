@@ -282,14 +282,24 @@ export const useCastStore = defineStore("cast", () => {
 
   // prepareFromThisMachine readies a file or web page picked on this machine.
   // A file is always cast from here. A web page is extracted here (a site
-  // without a script opens its browser on this screen) and cast by the
-  // remote that is playing, if any.
+  // without a script opens its browser on this screen); when a remote is
+  // playing, the extraction goes to it and the options are its tracks, so
+  // downloads and the cast happen there.
   const prepareFromThisMachine = async (path: string) => {
-    const { GetTrackDisplayInfo } = await import("../../wailsjs/go/main/App");
-    const info = await GetTrackDisplayInfo(path);
     const source =
       isWebUrl(path) && isRemoteActive() ? activeSource.value : LOCAL_SOURCE;
-    if (source.kind === "remote") await loadRemoteTargets(source);
+    if (source.kind === "remote") {
+      const { RemoteSendExtracted } = await import("../../wailsjs/go/main/App");
+      const [info] = await Promise.all([
+        RemoteSendExtracted(source.base, source.token, path),
+        loadRemoteTargets(source),
+      ]);
+      optionsSource.value = source;
+      setTrackInfo(info);
+      return;
+    }
+    const { GetTrackDisplayInfo } = await import("../../wailsjs/go/main/App");
+    const info = await GetTrackDisplayInfo(path);
     optionsSource.value = source;
     setTrackInfo(info);
   };
@@ -316,13 +326,8 @@ export const useCastStore = defineStore("cast", () => {
 
     const s = optionsSource.value;
     if (s.kind === "remote") {
-      const { RemotePlay, RemotePlayExtracted } = await import(
-        "../../wailsjs/go/main/App"
-      );
-      // A web page is extracted here, in this machine's browser, and the
-      // remote casts the result; a library item is the remote's own file.
-      const play = isWebUrl(media) ? RemotePlayExtracted : RemotePlay;
-      playbackState.value = await play(
+      const { RemotePlay } = await import("../../wailsjs/go/main/App");
+      playbackState.value = await RemotePlay(
         s.base,
         s.token,
         media,

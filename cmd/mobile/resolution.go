@@ -1,22 +1,18 @@
 package main
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
 	"frog-cast/pkg/castapi"
-	"frog-cast/pkg/hls"
 )
 
-const prefMaxHeight = "maxHeight"
+// defaultMaxHeight is the tallest variant chosen by default: variants are
+// re-encoded at their own size, and many TVs refuse more than 1080p.
+const defaultMaxHeight = 1080
 
-// The tallest video a web page may cast at; some TVs refuse sizes above 1080p.
-var (
-	resolutionLabels  = []string{"Highest", "Up to 1080p", "Up to 720p", "Up to 480p"}
-	resolutionHeights = []int{0, 1080, 720, 480}
-)
-
-// variantFor is the video variant to cast: the tallest no taller than
+// variantFor is the video variant offered first: the tallest no taller than
 // maxHeight (0 = any), else the shortest. Variants of unknown size lose to
 // any known one.
 func variantFor(tracks []castapi.VideoTrackDisplayItem, maxHeight int) int {
@@ -57,15 +53,26 @@ func variantHeight(resolution string) int {
 	return n
 }
 
-// manifestVariants lists a master playlist's variants as the instance would.
-func manifestVariants(manifest string) []castapi.VideoTrackDisplayItem {
-	m, err := hls.ParseManifest(manifest)
-	if err != nil {
-		return nil
+// videoLabel names a variant by height and codec, e.g. "1036p · AV1".
+func videoLabel(t castapi.VideoTrackDisplayItem) string {
+	size := fmt.Sprintf("Track %d", t.Index)
+	if h := variantHeight(t.Resolution); h > 0 {
+		size = fmt.Sprintf("%dp", h)
 	}
-	var out []castapi.VideoTrackDisplayItem
-	for _, t := range m.VideoTracks {
-		out = append(out, castapi.VideoTrackDisplayItem{Index: t.Index, Resolution: t.Resolution, Codecs: t.Codecs})
+	if codec := videoCodec(t.Codecs); codec != "" {
+		return size + " · " + codec
 	}
-	return out
+	return size
+}
+
+// videoCodec is the video codec of an HLS CODECS list, by name.
+func videoCodec(codecs string) string {
+	names := map[string]string{"avc1": "H.264", "avc3": "H.264", "hvc1": "HEVC", "hev1": "HEVC", "av01": "AV1", "vp09": "VP9"}
+	for _, c := range strings.Split(codecs, ",") {
+		prefix, _, _ := strings.Cut(strings.TrimSpace(c), ".")
+		if name, ok := names[prefix]; ok {
+			return name
+		}
+	}
+	return ""
 }

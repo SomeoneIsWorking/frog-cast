@@ -207,12 +207,12 @@ type PlayResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 	// NeedsExtraction: the page has to be extracted in a browser someone can
-	// see first; send it with /play-extracted from a controller that can.
+	// see first; send it with /extracted from a controller that can, then /play.
 	NeedsExtraction bool `json:"needsExtraction,omitempty"`
 }
 
 // ExtractedPage is a web page's stream as a controller's browser found it,
-// sent with POST /play-extracted.
+// sent with POST /extracted.
 type ExtractedPage struct {
 	PageURL     string            `json:"pageUrl"`
 	Title       string            `json:"title"`
@@ -229,11 +229,19 @@ type PageSubtitle struct {
 	Content string `json:"content"`
 }
 
-// PlayExtractedRequest is the body of POST /play-extracted.
-type PlayExtractedRequest struct {
-	Page     ExtractedPage `json:"page"`
-	DeviceIP string        `json:"deviceIp"` // "local" = the instance itself
-	// PageSubtitle picks one of Page.Subtitles, in place of SubtitlePath.
-	PageSubtitle *int `json:"pageSubtitle,omitempty"`
-	PlayOptions
+// DownloadRequest names one track of a web page; Start starts or stops its
+// download (POST /download).
+type DownloadRequest struct {
+	URL   string `json:"url"`
+	Type  string `json:"type"` // video or audio
+	Track int    `json:"track"`
+	Start bool   `json:"start"`
+}
+
+// DownloadStatus is a track's download: IDLE, INPROGRESS, STOPPED or
+// COMPLETED, and how many of its segments are on disk.
+type DownloadStatus struct {
+	Status string `json:"status"`
+	Done   int    `json:"done"`
+	Total  int    `json:"total"`
 }

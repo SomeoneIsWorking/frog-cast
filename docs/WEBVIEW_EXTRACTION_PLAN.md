@@ -55,7 +55,7 @@ the page opens in a window for someone to click play. Try a site with
 
 ## Results (2026-11-17, from Fedora, WebKit host)
 
-| Site | Rule | Found | Plays through `/play-extracted` |
+| Site | Rule | Found | Plays through `/extracted` and `/play` |
 | --- | --- | --- | --- |
 | fullhdfilmizlesene.now | click `.ply img` | master in 5.7 s, plus the player's Turkish VTT (the Chrome path took 32 s and finds no subtitles there) | yes: frame at 25:00 and the subtitles |
 | hdfilmcehennemi.nl | click `.play-that-video` | master (`master.txt`) in 6.1 s, plus 5 VTTs | yes: frame at 30:00 and the Turkish subtitles |

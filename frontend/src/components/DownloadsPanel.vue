@@ -70,8 +70,8 @@
             </div>
 
             <ProgressBar
-              :progress="item.Segments.filter((v) => v).length"
-              :total="item.Segments.length"
+              :progress="item.Done"
+              :total="item.Total"
               class="flex-1"
             />
             

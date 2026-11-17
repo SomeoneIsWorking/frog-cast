@@ -85,6 +85,8 @@ export function RemoteControl(arg1:string,arg2:string,arg3:string,arg4:number):P
 
 export function RemoteDevices(arg1:string,arg2:string):Promise<Array<castapi.RemoteDevice>>;
 
+export function RemoteDownload(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number):Promise<castapi.DownloadStatus>;
+
 export function RemoteIdentify(arg1:string,arg2:string,arg3:castapi.LibraryScanResult):Promise<castapi.LibraryScanResult>;
 
 export function RemoteLibrary(arg1:string,arg2:string):Promise<Array<castapi.LibraryItem>>;
@@ -99,11 +101,13 @@ export function RemotePing(arg1:string,arg2:string):Promise<boolean>;
 
 export function RemotePlay(arg1:string,arg2:string,arg3:string,arg4:string,arg5:castapi.PlayOptions):Promise<castapi.PlaybackState>;
 
-export function RemotePlayExtracted(arg1:string,arg2:string,arg3:string,arg4:string,arg5:castapi.PlayOptions):Promise<castapi.PlaybackState>;
-
 export function RemoteSeasonCancel(arg1:string,arg2:string):Promise<void>;
 
 export function RemoteSeasonStatus(arg1:string,arg2:string):Promise<castapi.SeasonTranslateProgress>;
+
+export function RemoteSendExtracted(arg1:string,arg2:string,arg3:string):Promise<castapi.TrackDisplayInfo>;
+
+export function RemoteSetDownload(arg1:string,arg2:string,arg3:castapi.DownloadRequest):Promise<castapi.DownloadStatus>;
 
 export function RemoteState(arg1:string,arg2:string):Promise<castapi.PlaybackState>;
 
