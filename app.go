@@ -82,7 +82,7 @@ func NewApp() *App {
 		mediaServer:   NewServer(localIP, port),
 		localIp:       localIP,
 		port:          port,
-		playbackState: PlaybackState{},
+		playbackState: PlaybackState{Status: "STOPPED"},
 		historyStore:  NewHistoryStore(),
 		settingsStore: NewSettingsStore(),
 		RemoteManager: remote.NewManager(true),
