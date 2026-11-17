@@ -24,6 +24,8 @@ import (
 const (
 	WaitAfterManifestFound = 2 * time.Second
 
+	clickTimeout = 10 * time.Second
+
 	browserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
 )
 
@@ -458,13 +460,20 @@ func registerFuncs(L *lua.LState, page *rod.Page) {
 
 	L.SetGlobal("click", L.NewFunction(func(L *lua.LState) int {
 		selector := L.CheckString(1)
-		el, err := page.Element(selector)
+		// rod waits for an element indefinitely; a page without it must fail.
+		el, err := page.Timeout(clickTimeout).Element(selector)
 		if err != nil {
 			L.Push(lua.LNil)
 			L.Push(lua.LString(err.Error()))
 			return 2
 		}
-		box := el.MustShape().Box()
+		shape, err := el.Shape()
+		if err != nil {
+			L.Push(lua.LNil)
+			L.Push(lua.LString(err.Error()))
+			return 2
+		}
+		box := shape.Box()
 		page.Mouse.MustMoveTo(box.X+box.Width/2, box.Y+box.Height/2)
 		page.Mouse.MustDown("left")
 		page.Mouse.MustUp("left")
