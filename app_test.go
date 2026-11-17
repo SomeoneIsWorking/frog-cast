@@ -5,13 +5,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/vishen/go-chromecast/application"
 
+	"wails-cast/pkg/folders"
 	"wails-cast/pkg/options"
+	"wails-cast/pkg/remote"
 )
 
 // TestMain points the config and cache directories at a temp dir so tests
@@ -189,5 +192,50 @@ func TestStateOmitsSelectionBeforeFirstCast(t *testing.T) {
 	}
 	if _, ok := raw["selection"]; ok {
 		t.Fatalf("selection present before any cast: %s", rec.Body)
+	}
+}
+
+// /track-info for a web URL that is playing must come from the casting
+// instance's cache, never a fresh extraction (which would open a browser).
+func TestTrackInfoForWebURLUsesCachedExtraction(t *testing.T) {
+	a, _ := newTestApp(t)
+	a.RemoteManager = remote.NewManager(true)
+	page := "https://example.test/film/1/"
+	dir := folders.Video(page)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := "#EXTM3U\n" +
+		"#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",LANGUAGE=\"en\",NAME=\"English\",URI=\"a/en.m3u8\"\n" +
+		"#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",LANGUAGE=\"tr\",NAME=\"Turkish\",URI=\"a/tr.m3u8\"\n" +
+		"#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,AUDIO=\"aud\"\n" +
+		"v/1080.m3u8\n"
+	if err := os.WriteFile(filepath.Join(dir, "playlist.m3u8"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	extraction := `{"URL":"` + page + `","Title":"Film","ManifestURL":"https://cdn.example.test/master.m3u8"}`
+	if err := os.WriteFile(filepath.Join(dir, "extraction.json"), []byte(extraction), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := a.GetTrackDisplayInfo(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.AudioTracks) != 2 || len(first.VideoTracks) != 1 {
+		t.Fatalf("tracks = %+v", first)
+	}
+
+	// Once loaded, the media stays in memory: removing the on-disk cache
+	// must not matter, so nothing is re-read or re-extracted.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	second, err := a.GetTrackDisplayInfo(page)
+	if err != nil {
+		t.Fatalf("second lookup went back to disk or extraction: %v", err)
+	}
+	if len(second.AudioTracks) != 2 {
+		t.Fatalf("second lookup tracks = %+v", second)
 	}
 }

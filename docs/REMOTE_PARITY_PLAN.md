@@ -7,7 +7,7 @@ quality, and the subtitle source. Local and remote go through the same UI and
 the same backend calls, with the only difference being which instance receives
 them.
 
-Status: Phases 0–1 done (2026-11-17); Phases 2–6 not started.
+Status: Phases 0–2 done (2026-11-17); Phases 3–6 not started.
 
 ## Where things stand
 
@@ -64,12 +64,13 @@ What doesn't:
 
 - When the cast store attaches, or when `state.mediaPath` changes, call
   `RemoteTrackInfo(mediaPath)` (or `GetTrackDisplayInfo` locally) and fill
-  `trackInfo`.
-- Build `castOptions` from `state` (Phase 1), not from the controller's
-  history, so the pickers show what is actually playing.
-- Check `/track-info` for web URLs: it goes through `RemoteManager.GetMedia`,
-  which is cached on the casting instance while it plays, so it shouldn't
-  re-extract. Confirm this with a test before relying on it.
+  `playingTrackInfo`. It is kept apart from `trackInfo`, which belongs to the
+  Cast Options panel and may be showing a different item.
+- The pickers read the current choice from `state.selection` (Phase 1), not
+  from the controller's history, so they show what is actually playing.
+- `/track-info` for web URLs goes through `RemoteManager.GetMedia`, which
+  keeps the media in memory on the casting instance once it plays, so it
+  doesn't re-extract (`TestTrackInfoForWebURLUsesCachedExtraction`).
 
 ## Phase 3: change tracks mid-playback
 

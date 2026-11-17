@@ -17,9 +17,10 @@ export function parseSubtitlePath(subtitlePath: string): ParsedSubtitle {
       type: "external",
       path: after,
     };
-  } else if (subtitlePath === "embedded") {
+  } else if (subtitlePath.startsWith("embedded:")) {
+    // The picker's value for an embedded track is the whole "embedded:<n>".
     return {
-      type: "embedded",
+      type: subtitlePath,
       path: "",
     };
   } else {

@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { Device, deviceService } from "../services/device";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
 import { castapi, ffmpeg, main, options } from "../../wailsjs/go/models";
@@ -11,6 +11,7 @@ import {
   activeSource,
   isRemoteActive,
   LOCAL_SOURCE,
+  sourceKey,
   type Source,
 } from "@/services/source";
 
@@ -144,6 +145,50 @@ export const useCastStore = defineStore("cast", () => {
 
   // Cast Options
   const castOptions = ref<FrontendCastOptions>();
+
+  // Tracks of whatever is playing on the active source, for the player bar's
+  // pickers. Separate from trackInfo, which belongs to the Cast Options panel
+  // and may show a different item. The current choice is
+  // playbackState.selection; null when the instance doesn't report one.
+  const playingTrackInfo = ref<castapi.TrackDisplayInfo | null>(null);
+  const playingSelection = computed(
+    () => playbackState.value.selection ?? null
+  );
+  let playingTrackInfoKey = "";
+  const loadPlayingTrackInfo = async () => {
+    const state = playbackState.value;
+    if (state.status === "STOPPED" || !state.mediaPath) {
+      playingTrackInfoKey = "";
+      playingTrackInfo.value = null;
+      return;
+    }
+    const source = activeSource.value;
+    const key = sourceKey(source) + "|" + state.mediaPath;
+    if (key === playingTrackInfoKey) return;
+    playingTrackInfoKey = key;
+    playingTrackInfo.value = null;
+    try {
+      const { RemoteTrackInfo, GetTrackDisplayInfo } = await import(
+        "../../wailsjs/go/main/App"
+      );
+      const info =
+        source.kind === "remote"
+          ? await RemoteTrackInfo(source.base, source.token, state.mediaPath)
+          : await GetTrackDisplayInfo(state.mediaPath);
+      if (playingTrackInfoKey === key) playingTrackInfo.value = info;
+    } catch {
+      // Leave the pickers disabled; the next media or source change retries.
+      if (playingTrackInfoKey === key) playingTrackInfoKey = "";
+    }
+  };
+  watch(
+    () => [
+      playbackState.value.mediaPath,
+      playbackState.value.status === "STOPPED",
+      sourceKey(activeSource.value),
+    ],
+    loadPlayingTrackInfo
+  );
 
   // Computed
   const hasDevices = computed(() => devices.value.length > 0);
@@ -357,6 +402,8 @@ export const useCastStore = defineStore("cast", () => {
     playbackState,
     castOptions,
     trackInfo,
+    playingTrackInfo,
+    playingSelection,
     remoteDevices,
     remoteTargetHost,
 
