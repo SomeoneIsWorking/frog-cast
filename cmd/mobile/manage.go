@@ -2,275 +2,278 @@ package main
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"wails-cast/pkg/castapi"
 )
 
-// ---------------------------------------------------------------------------
-// Library Mgmt tab
-// ---------------------------------------------------------------------------
+const prefLanguage = "translateLanguage"
 
-func (u *ui) buildMgmtTab() fyne.CanvasObject {
-	scan := widget.NewButton("Scan tree", func() {
-		go func() {
-			tree, err := u.client.LibraryTree()
-			if err != nil {
-				fyne.Do(func() { u.fail(err) })
-				return
-			}
-			fyne.Do(func() {
-				u.currentTree = tree
-				u.mgmtIdentifyBtn.Enable()
-				u.mgmtPreviewBtn.Enable()
-				u.mgmtTree.Refresh()
-			})
-		}()
-	})
-	u.mgmtIdentifyBtn = widget.NewButton("Identify (TMDB)", func() {
-		if u.currentTree == nil {
-			return
-		}
-		go func() {
-			out, err := u.client.Identify(*u.currentTree)
-			if err != nil {
-				fyne.Do(func() { u.fail(err) })
-				return
-			}
-			fyne.Do(func() { u.currentTree = out; u.mgmtTree.Refresh() })
-		}()
-	})
-	u.mgmtPreviewBtn = widget.NewButton("Preview organize", func() {
-		if u.currentTree == nil {
-			return
-		}
-		go func() {
-			plan, err := u.client.OrganizePreview(*u.currentTree)
-			if err != nil {
-				fyne.Do(func() { u.fail(err) })
-				return
-			}
-			fyne.Do(func() { u.showOrganizeDialog(plan) })
-		}()
-	})
-	u.mgmtIdentifyBtn.Disable()
-	u.mgmtPreviewBtn.Disable()
+// manageView runs the instance's library upkeep: rescan, identify shows on
+// TMDB, organize files, and translate a season's subtitles.
+type manageView struct {
+	s       *session
+	content fyne.CanvasObject
 
-	buttons := container.NewGridWithColumns(3, scan, u.mgmtIdentifyBtn, u.mgmtPreviewBtn)
+	tree    *castapi.LibraryScanResult
+	seasons []seasonRef
+	list    *widget.List
+	status  *widget.Label
 
-	u.mgmtTree = widget.NewTree(
-		u.treeChildUIDs,
-		u.treeIsBranch,
-		u.treeCreate,
-		u.treeUpdate,
-	)
+	identify *widget.Button
+	organize *widget.Button
 
-	u.seasonBarLabel = widget.NewLabel("")
-	cancel := widget.NewButton("Cancel", func() {
-		go func() {
-			if err := u.client.SeasonCancel(); err != nil {
-				fyne.Do(func() { u.fail(err) })
-			}
-		}()
-	})
-	u.seasonBarWrapper = container.NewBorder(nil, nil, nil, cancel, u.seasonBarLabel)
-	u.seasonBarWrapper.Hide()
-
-	bottom := container.NewVBox(u.seasonBarWrapper)
-	return container.NewBorder(buttons, bottom, nil, nil, u.mgmtTree)
+	progress     *widget.ProgressBar
+	progressText *widget.Label
+	progressBox  fyne.CanvasObject
+	stopSeason   chan struct{}
 }
 
-func (u *ui) treeChildUIDs(uid widget.TreeNodeID) []widget.TreeNodeID {
-	if u.currentTree == nil {
-		return nil
-	}
-	if uid == "" {
-		ids := make([]string, 0, len(u.currentTree.Shows))
-		for i := range u.currentTree.Shows {
-			ids = append(ids, fmt.Sprintf("s:%d", i))
-		}
-		return ids
-	}
-	parts := strings.Split(uid, ":")
-	switch parts[0] {
-	case "s":
-		si, _ := strconv.Atoi(parts[1])
-		if si < 0 || si >= len(u.currentTree.Shows) {
-			return nil
-		}
-		ids := make([]string, 0, len(u.currentTree.Shows[si].Seasons))
-		for j := range u.currentTree.Shows[si].Seasons {
-			ids = append(ids, fmt.Sprintf("e:%d:%d", si, j))
-		}
-		return ids
-	case "e":
-		si, _ := strconv.Atoi(parts[1])
-		sj, _ := strconv.Atoi(parts[2])
-		if si < 0 || si >= len(u.currentTree.Shows) || sj < 0 || sj >= len(u.currentTree.Shows[si].Seasons) {
-			return nil
-		}
-		ids := make([]string, 0)
-		for k := range u.currentTree.Shows[si].Seasons[sj].Episodes {
-			ids = append(ids, fmt.Sprintf("p:%d:%d:%d", si, sj, k))
-		}
-		return ids
-	}
-	return nil
+type seasonRef struct {
+	show   string
+	season castapi.LibrarySeason
 }
 
-func (u *ui) treeIsBranch(uid widget.TreeNodeID) bool {
-	if uid == "" {
-		return true
-	}
-	return strings.HasPrefix(uid, "s:") || strings.HasPrefix(uid, "e:")
-}
+func newManageView(s *session) *manageView {
+	v := &manageView{s: s}
 
-func (u *ui) treeCreate(branch bool) fyne.CanvasObject {
-	if branch {
-		return container.NewHBox(widget.NewLabel(""), widget.NewButton("Translate…", nil))
-	}
-	return widget.NewLabel("")
-}
+	scan := widget.NewButtonWithIcon("Rescan", theme.ViewRefreshIcon(), v.scan)
+	v.identify = widget.NewButtonWithIcon("Identify", theme.SearchIcon(), v.runIdentify)
+	v.organize = widget.NewButtonWithIcon("Organize", theme.FolderIcon(), v.previewOrganize)
+	v.identify.Disable()
+	v.organize.Disable()
 
-func (u *ui) treeUpdate(uid widget.TreeNodeID, branch bool, o fyne.CanvasObject) {
-	if u.currentTree == nil {
-		return
-	}
-	if !branch {
-		parts := strings.Split(uid, ":")
-		si, _ := strconv.Atoi(parts[1])
-		sj, _ := strconv.Atoi(parts[2])
-		k, _ := strconv.Atoi(parts[3])
-		if si >= len(u.currentTree.Shows) || sj >= len(u.currentTree.Shows[si].Seasons) || k >= len(u.currentTree.Shows[si].Seasons[sj].Episodes) {
-			return
-		}
-		ep := u.currentTree.Shows[si].Seasons[sj].Episodes[k]
-		name := ep.Name
-		if ep.EpisodeName != "" {
-			name = fmt.Sprintf("S%02dE%02d %s", ep.Season, ep.Episode, ep.EpisodeName)
-		}
-		o.(*widget.Label).SetText(name)
-		return
-	}
-	box := o.(*fyne.Container)
-	lbl := box.Objects[0].(*widget.Label)
-	btn := box.Objects[1].(*widget.Button)
-	parts := strings.Split(uid, ":")
-	if parts[0] == "s" {
-		si, _ := strconv.Atoi(parts[1])
-		if si >= len(u.currentTree.Shows) {
-			return
-		}
-		lbl.SetText(u.currentTree.Shows[si].Name)
-		btn.Hide()
-		return
-	}
-	si, _ := strconv.Atoi(parts[1])
-	sj, _ := strconv.Atoi(parts[2])
-	if si >= len(u.currentTree.Shows) || sj >= len(u.currentTree.Shows[si].Seasons) {
-		return
-	}
-	show := u.currentTree.Shows[si]
-	season := show.Seasons[sj]
-	lbl.SetText(season.Name)
-	btn.OnTapped = func() { u.promptTranslateSeason(show.Name, season) }
-	btn.Show()
-}
-
-func (u *ui) showOrganizeDialog(plan []castapi.OrganizeMove) {
-	list := widget.NewList(
-		func() int { return len(plan) },
-		func() fyne.CanvasObject { return widget.NewLabel("") },
+	v.list = widget.NewList(
+		func() int { return len(v.seasons) },
+		func() fyne.CanvasObject {
+			title := widget.NewLabel("")
+			title.Truncation = fyne.TextTruncateEllipsis
+			detail := caption("")
+			detail.Wrapping = fyne.TextWrapOff
+			translate := widget.NewButtonWithIcon("", theme.DocumentIcon(), nil)
+			return container.NewBorder(nil, nil, nil, translate, container.NewVBox(title, detail))
+		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
-			o.(*widget.Label).SetText(plan[i].Description)
+			ref := v.seasons[i]
+			box := o.(*fyne.Container)
+			texts := box.Objects[0].(*fyne.Container).Objects
+			texts[0].(*widget.Label).SetText(ref.show + " · " + ref.season.Name)
+			translated := 0
+			for _, e := range ref.season.Episodes {
+				if e.Translated {
+					translated++
+				}
+			}
+			texts[1].(*widget.Label).SetText(fmt.Sprintf("%s · %d translated", plural(len(ref.season.Episodes), "episode"), translated))
+			box.Objects[1].(*widget.Button).OnTapped = func() { v.promptTranslate(ref) }
 		},
 	)
-	scroll := container.NewScroll(list)
-	scroll.SetMinSize(fyne.NewSize(360, 400))
-	dialog.ShowCustomConfirm("Organize plan", "Execute", "Cancel", scroll, func(ok bool) {
+	v.list.OnSelected = func(i widget.ListItemID) { v.list.Unselect(i) }
+
+	v.status = caption("Loading…")
+	v.status.Alignment = fyne.TextAlignCenter
+
+	v.progress = widget.NewProgressBar()
+	v.progressText = caption("")
+	cancel := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
+		go func() {
+			if err := s.client.SeasonCancel(); err != nil {
+				fyne.Do(func() { s.ui.fail(err) })
+			}
+		}()
+	})
+	cancel.Importance = widget.LowImportance
+	v.progressBox = container.NewBorder(nil, nil, nil, cancel, container.NewVBox(v.progressText, v.progress))
+	v.progressBox.Hide()
+
+	top := container.NewVBox(
+		container.NewGridWithColumns(3, scan, v.identify, v.organize),
+		caption("Translate a season's subtitles with the button beside it."),
+	)
+	v.content = container.NewPadded(container.NewBorder(top, container.NewVBox(v.status, v.progressBox), nil, nil, v.list))
+	v.scan()
+	v.followSeason()
+	return v
+}
+
+func (v *manageView) setTree(tree *castapi.LibraryScanResult) {
+	v.tree = tree
+	v.seasons = v.seasons[:0]
+	for _, show := range tree.Shows {
+		for _, season := range show.Seasons {
+			v.seasons = append(v.seasons, seasonRef{show: show.Name, season: season})
+		}
+	}
+	v.list.Refresh()
+	v.identify.Enable()
+	v.organize.Enable()
+	if len(v.seasons) == 0 {
+		v.status.SetText("No shows in the library.")
+		v.status.Show()
+	} else {
+		v.status.Hide()
+	}
+}
+
+func (v *manageView) scan() {
+	v.status.SetText("Scanning…")
+	v.status.Show()
+	go func() {
+		tree, err := v.s.client.LibraryTree()
+		fyne.Do(func() {
+			if err != nil {
+				v.status.SetText("Scan failed: " + err.Error())
+				return
+			}
+			v.setTree(tree)
+		})
+	}()
+}
+
+func (v *manageView) runIdentify() {
+	if v.tree == nil {
+		return
+	}
+	v.identify.Disable()
+	v.status.SetText("Looking up shows on TMDB…")
+	v.status.Show()
+	tree := *v.tree
+	go func() {
+		out, err := v.s.client.Identify(tree)
+		fyne.Do(func() {
+			v.identify.Enable()
+			if err != nil {
+				v.status.Hide()
+				v.s.ui.fail(err)
+				return
+			}
+			v.setTree(out)
+		})
+	}()
+}
+
+func (v *manageView) previewOrganize() {
+	if v.tree == nil {
+		return
+	}
+	tree := *v.tree
+	go func() {
+		plan, err := v.s.client.OrganizePreview(tree)
+		fyne.Do(func() {
+			if err != nil {
+				v.s.ui.fail(err)
+				return
+			}
+			v.showOrganize(plan)
+		})
+	}()
+}
+
+func (v *manageView) showOrganize(plan []castapi.OrganizeMove) {
+	if len(plan) == 0 {
+		dialog.ShowInformation("Organize", "Everything is already in place.", v.s.ui.window)
+		return
+	}
+	list := widget.NewList(
+		func() int { return len(plan) },
+		func() fyne.CanvasObject { l := widget.NewLabel(""); l.Wrapping = fyne.TextWrapWord; return l },
+		func(i widget.ListItemID, o fyne.CanvasObject) { o.(*widget.Label).SetText(plan[i].Description) },
+	)
+	size := v.s.ui.window.Canvas().Size()
+	d := dialog.NewCustomConfirm(fmt.Sprintf("Move %s?", plural(len(plan), "file")), "Move", "Cancel", list, func(ok bool) {
 		if !ok {
 			return
 		}
 		go func() {
-			if err := u.client.OrganizeExecute(plan); err != nil {
-				fyne.Do(func() { u.fail(err) })
-			}
+			err := v.s.client.OrganizeExecute(plan)
+			fyne.Do(func() {
+				if err != nil {
+					v.s.ui.fail(err)
+					return
+				}
+				v.scan()
+			})
 		}()
-	}, u.window)
+	}, v.s.ui.window)
+	d.Resize(fyne.NewSize(size.Width-16, size.Height*0.7))
+	d.Show()
 }
 
-func (u *ui) promptTranslateSeason(showName string, season castapi.LibrarySeason) {
-	langEntry := widget.NewEntry()
-	langEntry.SetText("Turkish")
-	dialog.ShowCustomConfirm("Translate "+season.Name, "Start", "Cancel",
-		container.NewVBox(widget.NewLabel("Language"), langEntry),
+func (v *manageView) promptTranslate(ref seasonRef) {
+	prefs := v.s.ui.fyneApp.Preferences()
+	language := widget.NewEntry()
+	language.SetText(prefs.StringWithFallback(prefLanguage, "Turkish"))
+	d := dialog.NewForm("Translate "+ref.season.Name, "Start", "Cancel",
+		[]*widget.FormItem{widget.NewFormItem("Into", language)},
 		func(ok bool) {
-			if !ok {
+			lang := strings.TrimSpace(language.Text)
+			if !ok || lang == "" {
 				return
 			}
-			lang := strings.TrimSpace(langEntry.Text)
-			if lang == "" {
-				lang = "Turkish"
-			}
-			paths := make([]string, 0, len(season.Episodes))
-			for _, e := range season.Episodes {
+			prefs.SetString(prefLanguage, lang)
+			paths := make([]string, 0, len(ref.season.Episodes))
+			for _, e := range ref.season.Episodes {
 				paths = append(paths, e.Path)
 			}
 			go func() {
-				if err := u.client.TranslateSeason(showName, season.Name, paths, lang); err != nil {
-					fyne.Do(func() { u.fail(err) })
-					return
-				}
-				fyne.Do(func() { u.startSeasonPoll() })
+				err := v.s.client.TranslateSeason(ref.show, ref.season.Name, paths, lang)
+				fyne.Do(func() {
+					if err != nil {
+						v.s.ui.fail(err)
+						return
+					}
+					v.followSeason()
+				})
 			}()
-		}, u.window)
+		}, v.s.ui.window)
+	d.Resize(fyne.NewSize(v.s.ui.window.Canvas().Size().Width-16, d.MinSize().Height))
+	d.Show()
 }
 
-func (u *ui) startSeasonPoll() {
-	u.stopSeasonPoll()
-	u.seasonStop = make(chan struct{})
-	stop := u.seasonStop
+// followSeason shows a running season translation until it ends.
+func (v *manageView) followSeason() {
+	v.stopSeasonPoll()
+	stop := make(chan struct{})
+	v.stopSeason = stop
 	go func() {
 		t := time.NewTicker(2 * time.Second)
 		defer t.Stop()
 		for {
+			st, err := v.s.client.SeasonStatus()
+			running := err == nil && st.Status == "running"
+			fyne.Do(func() {
+				if !running {
+					v.progressBox.Hide()
+					return
+				}
+				v.progressText.SetText(fmt.Sprintf("Translating %s · %s", st.SeasonName, st.Message))
+				if st.TotalEpisodes > 0 {
+					v.progress.SetValue(float64(st.CurrentEpisode) / float64(st.TotalEpisodes))
+				}
+				v.progressBox.Show()
+			})
+			if !running {
+				return
+			}
 			select {
 			case <-stop:
 				return
 			case <-t.C:
-				st, err := u.client.SeasonStatus()
-				if err != nil {
-					continue
-				}
-				running := st.Status == "running"
-				text := fmt.Sprintf("Translating %s · %d/%d · %s", st.SeasonName, st.CurrentEpisode, st.TotalEpisodes, st.Message)
-				fyne.Do(func() {
-					if running {
-						u.seasonBarLabel.SetText(text)
-						u.seasonBarWrapper.Show()
-					} else {
-						u.seasonBarWrapper.Hide()
-					}
-				})
-				if !running {
-					return
-				}
 			}
 		}
 	}()
 }
 
-func (u *ui) stopSeasonPoll() {
-	if u.seasonStop == nil {
-		return
+func (v *manageView) stopSeasonPoll() {
+	if v.stopSeason != nil {
+		close(v.stopSeason)
+		v.stopSeason = nil
 	}
-	close(u.seasonStop)
-	u.seasonStop = nil
 }

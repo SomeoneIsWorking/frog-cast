@@ -1,383 +1,228 @@
 package main
 
 import (
-	"fmt"
-	"slices"
-	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"wails-cast/pkg/castapi"
-	"wails-cast/pkg/options"
 )
 
-// ---------------------------------------------------------------------------
-// Now Playing screen
-// ---------------------------------------------------------------------------
+// nowPlaying shows and controls the instance's running cast. It polls the
+// instance's state once a second while it is on screen.
+type nowPlaying struct {
+	s       *session
+	content fyne.CanvasObject
 
-func (u *ui) showNowPlaying() {
-	title := widget.NewLabel("")
-	pos := widget.NewLabel("0:00 / 0:00")
+	state    *castapi.PlaybackState
+	stopPoll chan struct{}
+	seeking  bool // the user is dragging the position slider
 
-	seek := widget.NewSlider(0, 1)
-	seek.Step = 1
-	var seekingDuration float64
-	seek.OnChangeEnded = func(v float64) {
-		if seekingDuration <= 0 {
-			return
-		}
-		go func() {
-			if _, err := u.client.Control("seek", v); err != nil {
-				fyne.Do(func() { u.fail(err) })
-			}
-		}()
+	idle      fyne.CanvasObject
+	active    fyne.CanvasObject
+	where     *widget.Label
+	title     *widget.Label
+	elapsed   *widget.Label
+	remaining *widget.Label
+	position  *widget.Slider
+	playPause *widget.Button
+	mute      *widget.Button
+	volume    *widget.Slider
+}
+
+func newNowPlaying(s *session) *nowPlaying {
+	p := &nowPlaying{s: s}
+
+	p.where = caption("")
+	p.title = heading1("")
+	p.title.Wrapping = fyne.TextWrapWord
+
+	p.elapsed = widget.NewLabel("0:00")
+	p.remaining = widget.NewLabel("0:00")
+	p.position = widget.NewSlider(0, 1)
+	p.position.OnChanged = func(v float64) {
+		p.seeking = true
+		p.elapsed.SetText(fmtSec(v))
+	}
+	p.position.OnChangeEnded = func(v float64) {
+		p.seeking = false
+		p.control("seek", v)
 	}
 
-	var currentPos float64
-
-	playPause := widget.NewButton("Pause", nil)
-	stop := widget.NewButton("Stop", func() {
-		go func() {
-			if _, err := u.client.Control("stop", 0); err != nil {
-				fyne.Do(func() { u.fail(err) })
-			}
-		}()
-	})
-	back30 := widget.NewButton("-30", func() { u.seekRelative(currentPos, -30) })
-	back10 := widget.NewButton("-10", func() { u.seekRelative(currentPos, -10) })
-	fwd10 := widget.NewButton("+10", func() { u.seekRelative(currentPos, 10) })
-	fwd30 := widget.NewButton("+30", func() { u.seekRelative(currentPos, 30) })
-
-	vol := widget.NewSlider(0, 1)
-	vol.Step = 0.01
-	vol.OnChangeEnded = func(v float64) {
-		go func() {
-			if _, err := u.client.Control("volume", v); err != nil {
-				fyne.Do(func() { u.fail(err) })
-			}
-		}()
+	p.playPause = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), p.togglePause)
+	p.playPause.Importance = widget.HighImportance
+	skip := func(icon fyne.Resource, by float64) *widget.Button {
+		return widget.NewButtonWithIcon("", icon, func() { p.seekBy(by) })
 	}
-
-	muted := false
-	mute := widget.NewButton("Mute", nil)
-	mute.OnTapped = func() {
-		action := "mute"
-		if muted {
-			action = "unmute"
-		}
-		muted = !muted
-		if muted {
-			mute.SetText("Unmute")
-		} else {
-			mute.SetText("Mute")
-		}
-		go func() {
-			if _, err := u.client.Control(action, 0); err != nil {
-				fyne.Do(func() { u.fail(err) })
-			}
-		}()
-	}
-
-	subtitle := widget.NewButton("Subtitle", func() { u.showSubtitleDialog() })
-	tracks := widget.NewButton("Tracks", func() { u.showTracksDialog() })
-	back := widget.NewButton("Back to library", func() {
-		u.stopNowPlayingPoll()
-		u.window.SetContent(u.tabs)
-		if u.tabs != nil {
-			u.tabs.SelectIndex(0)
-		}
-	})
-
-	transport := container.NewGridWithColumns(4, back30, back10, fwd10, fwd30)
-	controls := container.NewGridWithColumns(2, playPause, stop)
-
-	content := container.NewVBox(
-		back,
-		title,
-		pos,
-		seek,
-		transport,
-		controls,
-		widget.NewLabel("Volume"), vol,
-		mute,
-		subtitle,
-		tracks,
+	transport := container.NewGridWithColumns(5,
+		skip(theme.MediaSkipPreviousIcon(), -30),
+		skip(theme.MediaFastRewindIcon(), -10),
+		p.playPause,
+		skip(theme.MediaFastForwardIcon(), 10),
+		skip(theme.MediaSkipNextIcon(), 30),
 	)
-	u.window.SetContent(content)
-
-	pauseState := false
-	playPause.OnTapped = func() {
-		action := "pause"
-		if pauseState {
-			action = "resume"
-		}
-		go func() {
-			if _, err := u.client.Control(action, 0); err != nil {
-				fyne.Do(func() { u.fail(err) })
-			}
-		}()
+	jumps := container.NewGridWithColumns(5, note("−30s"), note("−10s"), widget.NewLabel(""), note("+10s"), note("+30s"))
+	for _, o := range jumps.Objects {
+		o.(*widget.Label).Alignment = fyne.TextAlignCenter
 	}
 
-	u.stopNowPlayingPoll()
-	u.nowPlayingStop = make(chan struct{})
-	stopCh := u.nowPlayingStop
+	p.volume = widget.NewSlider(0, 1)
+	p.volume.Step = 0.01
+	p.volume.OnChangeEnded = func(v float64) { p.control("volume", v) }
+	p.mute = widget.NewButtonWithIcon("", theme.VolumeUpIcon(), p.toggleMute)
+	p.mute.Importance = widget.LowImportance
+
+	subtitles := widget.NewButtonWithIcon("Subtitles", theme.DocumentIcon(), func() {
+		if p.state != nil {
+			s.showSubtitleSheet(p.state)
+		}
+	})
+	tracks := widget.NewButtonWithIcon("Tracks", theme.ListIcon(), func() {
+		if p.state != nil {
+			s.showTracksSheet(p.state)
+		}
+	})
+	stop := widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), func() { p.control("stop", 0) })
+	stop.Importance = widget.DangerImportance
+
+	p.active = container.NewVBox(
+		p.where,
+		p.title,
+		widget.NewSeparator(),
+		p.position,
+		container.NewBorder(nil, nil, p.elapsed, p.remaining),
+		transport,
+		jumps,
+		widget.NewSeparator(),
+		container.NewBorder(nil, nil, p.mute, nil, p.volume),
+		container.NewGridWithColumns(2, subtitles, tracks),
+		layoutSpacer(),
+		stop,
+	)
+	p.idle = container.NewCenter(container.NewVBox(
+		widget.NewIcon(theme.MediaVideoIcon()),
+		widget.NewLabelWithStyle("Nothing is playing", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
+		note("Pick an episode in Library."),
+	))
+	p.active.Hide()
+	p.content = container.NewPadded(container.NewStack(p.idle, container.NewVScroll(p.active)))
+	return p
+}
+
+func layoutSpacer() fyne.CanvasObject {
+	return container.NewPadded(widget.NewLabel(""))
+}
+
+// setPolling starts or stops following the instance's state.
+func (p *nowPlaying) setPolling(on bool) {
+	if !on {
+		if p.stopPoll != nil {
+			close(p.stopPoll)
+			p.stopPoll = nil
+		}
+		return
+	}
+	if p.stopPoll != nil {
+		return
+	}
+	stop := make(chan struct{})
+	p.stopPoll = stop
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
+			if st, err := p.s.client.State(); err == nil {
+				fyne.Do(func() { p.show(st) })
+			}
 			select {
-			case <-stopCh:
+			case <-stop:
 				return
 			case <-ticker.C:
-				st, err := u.client.State()
-				if err != nil {
-					continue
-				}
-				fyne.Do(func() {
-					title.SetText(st.MediaName)
-					currentPos = st.CurrentTime
-					seekingDuration = st.Duration
-					if st.Duration > 0 {
-						seek.Max = st.Duration
-						seek.Value = st.CurrentTime
-						seek.Refresh()
-					}
-					pos.SetText(fmt.Sprintf("%s / %s", fmtSec(st.CurrentTime), fmtSec(st.Duration)))
-					pauseState = st.Status == "PAUSED"
-					if pauseState {
-						playPause.SetText("Resume")
-					} else {
-						playPause.SetText("Pause")
-					}
-					if !muted && st.Muted {
-						muted = true
-						mute.SetText("Unmute")
-					}
-					vol.Value = st.Volume
-					vol.Refresh()
-				})
 			}
 		}
 	}()
-
 }
 
-// showSubtitleDialog edits the running cast's subtitle style, seeded from
-// what the casting instance reports.
-func (u *ui) showSubtitleDialog() {
+func (p *nowPlaying) show(st *castapi.PlaybackState) {
+	p.state = st
+	if st.Status == "STOPPED" {
+		p.active.Hide()
+		p.idle.Show()
+		return
+	}
+	p.idle.Hide()
+	p.active.Show()
+
+	status := map[string]string{"PLAYING": "Playing", "PAUSED": "Paused", "LOADING": "Loading"}[st.Status]
+	if status == "" {
+		status = st.Status
+	}
+	p.where.SetText(status + " on " + p.s.targets.name(st.DeviceURL))
+	if p.title.Text != st.MediaName {
+		p.title.SetText(st.MediaName)
+		// The title's wrapped height changed; lay the screen out again.
+		p.active.Refresh()
+	}
+
+	if !p.seeking {
+		p.position.Max = max(st.Duration, 1)
+		p.position.Value = min(st.CurrentTime, p.position.Max)
+		p.position.Refresh()
+		p.elapsed.SetText(fmtSec(st.CurrentTime))
+	}
+	p.remaining.SetText("−" + fmtSec(max(st.Duration-st.CurrentTime, 0)))
+
+	if st.Status == "PAUSED" {
+		p.playPause.SetIcon(theme.MediaPlayIcon())
+	} else {
+		p.playPause.SetIcon(theme.MediaPauseIcon())
+	}
+	if st.Muted {
+		p.mute.SetIcon(theme.VolumeMuteIcon())
+	} else {
+		p.mute.SetIcon(theme.VolumeUpIcon())
+	}
+	p.volume.Value = st.Volume
+	p.volume.Refresh()
+}
+
+func (p *nowPlaying) togglePause() {
+	if p.state != nil && p.state.Status == "PAUSED" {
+		p.control("resume", 0)
+	} else {
+		p.control("pause", 0)
+	}
+}
+
+func (p *nowPlaying) toggleMute() {
+	if p.state != nil && p.state.Muted {
+		p.control("unmute", 0)
+	} else {
+		p.control("mute", 0)
+	}
+}
+
+func (p *nowPlaying) seekBy(seconds float64) {
+	if p.state == nil {
+		return
+	}
+	target := min(max(p.state.CurrentTime+seconds, 0), p.state.Duration)
+	p.control("seek", target)
+}
+
+// control sends a transport command and shows the state it returns.
+func (p *nowPlaying) control(action string, value float64) {
 	go func() {
-		opts := u.currentSubtitleOpts
-		if opts.Path == "" {
-			opts.Path = u.currentSubtitlePath
-		}
-		if st, err := u.client.State(); err == nil && st.Selection != nil {
-			sel := st.Selection
-			opts = options.SubtitleCastOptions{
-				Path:                 sel.SubtitlePath,
-				BurnIn:               sel.BurnIn,
-				FontSize:             sel.FontSize,
-				IgnoreClosedCaptions: sel.IgnoreClosedCaptions,
-				DelaySeconds:         sel.DelaySeconds,
-				Bold:                 sel.Bold,
-				Italic:               sel.Italic,
+		st, err := p.s.client.Control(action, value)
+		fyne.Do(func() {
+			if err != nil {
+				p.s.ui.fail(err)
+				return
 			}
-		}
-		if opts.FontSize == 0 {
-			opts.FontSize = 24
-		}
-		fyne.Do(func() { u.showSubtitleForm(opts) })
-	}()
-}
-
-func (u *ui) showSubtitleForm(opts options.SubtitleCastOptions) {
-
-	delay := widget.NewSlider(-30, 30)
-	delay.Step = 0.5
-	delay.Value = opts.DelaySeconds
-	delayLbl := widget.NewLabel(fmt.Sprintf("Delay: %.1fs", delay.Value))
-	delay.OnChanged = func(v float64) { delayLbl.SetText(fmt.Sprintf("Delay: %.1fs", v)) }
-
-	fs := widget.NewSlider(10, 80)
-	fs.Step = 1
-	fs.Value = float64(opts.FontSize)
-	fsLbl := widget.NewLabel(fmt.Sprintf("Font size: %d", opts.FontSize))
-	fs.OnChanged = func(v float64) { fsLbl.SetText(fmt.Sprintf("Font size: %d", int(v))) }
-
-	bold := widget.NewCheck("Bold", nil)
-	bold.Checked = opts.Bold
-	italic := widget.NewCheck("Italic", nil)
-	italic.Checked = opts.Italic
-	burn := widget.NewCheck("Burn-in", nil)
-	burn.Checked = opts.BurnIn
-	ignoreCC := widget.NewCheck("Ignore CC", nil)
-	ignoreCC.Checked = opts.IgnoreClosedCaptions
-
-	path := widget.NewEntry()
-	path.SetText(opts.Path)
-
-	form := container.NewVBox(
-		delayLbl, delay,
-		fsLbl, fs,
-		bold, italic, burn, ignoreCC,
-		widget.NewLabel("Path"), path,
-	)
-	dialog.ShowCustomConfirm("Subtitle", "Apply", "Cancel", form, func(ok bool) {
-		if !ok {
-			return
-		}
-		next := options.SubtitleCastOptions{
-			Path:                 path.Text,
-			BurnIn:               burn.Checked,
-			FontSize:             int(fs.Value),
-			IgnoreClosedCaptions: ignoreCC.Checked,
-			DelaySeconds:         delay.Value,
-			Bold:                 bold.Checked,
-			Italic:               italic.Checked,
-		}
-		u.currentSubtitleOpts = next
-		u.currentSubtitlePath = next.Path
-		go func() {
-			if err := u.client.UpdateSubtitle(next); err != nil {
-				fyne.Do(func() { u.fail(err) })
-			}
-		}()
-	}, u.window)
-}
-
-// qualityBitrates are the transcode bitrates offered besides "Original".
-var qualityBitrates = []string{"8M", "5M", "3M", "2M"}
-
-// showTracksDialog switches the running cast's video track, audio track,
-// quality or subtitle source. The TV reloads at the same position.
-func (u *ui) showTracksDialog() {
-	go func() {
-		st, err := u.client.State()
-		if err != nil {
-			fyne.Do(func() { u.fail(err) })
-			return
-		}
-		if st.Selection == nil || st.MediaPath == "" {
-			fyne.Do(func() {
-				dialog.ShowInformation("Tracks", "This instance doesn't report what it's playing.", u.window)
-			})
-			return
-		}
-		info, err := u.client.TrackInfo(st.MediaPath)
-		if err != nil {
-			fyne.Do(func() { u.fail(err) })
-			return
-		}
-		sel := *st.Selection
-		fyne.Do(func() { u.showTracksForm(sel, info) })
-	}()
-}
-
-func (u *ui) showTracksForm(sel castapi.CastSelection, info *castapi.TrackDisplayInfo) {
-	var videoLabels []string
-	videoIdx := -1
-	for i, v := range info.VideoTracks {
-		videoLabels = append(videoLabels, fmt.Sprintf("%d: %s", v.Index, v.Resolution))
-		if v.Index == sel.VideoTrack {
-			videoIdx = i
-		}
-	}
-	videoSel := widget.NewSelect(videoLabels, nil)
-	if videoIdx >= 0 {
-		videoSel.SetSelectedIndex(videoIdx)
-	}
-
-	var audioLabels []string
-	audioIdx := -1
-	for i, a := range info.AudioTracks {
-		audioLabels = append(audioLabels, fmt.Sprintf("%d: %s", a.Index, a.Language))
-		if a.Index == sel.AudioTrack {
-			audioIdx = i
-		}
-	}
-	audioSel := widget.NewSelect(audioLabels, nil)
-	if audioIdx >= 0 {
-		audioSel.SetSelectedIndex(audioIdx)
-	}
-
-	qualities := append([]string{""}, qualityBitrates...)
-	qualityLabels := append([]string{"Original"}, qualityBitrates...)
-	qualitySel := widget.NewSelect(qualityLabels, nil)
-	for i, q := range qualities {
-		if q == sel.Quality {
-			qualitySel.SetSelectedIndex(i)
-		}
-	}
-
-	// Subtitle sources on the casting instance: none, embedded tracks, and
-	// the external files it knows about.
-	var subPaths, subLabels []string
-	for _, s := range info.SubtitleTracks {
-		if s.Path != "external" {
-			subPaths = append(subPaths, s.Path)
-			subLabels = append(subLabels, s.Label)
-		}
-	}
-	for _, p := range []string{sel.SubtitlePath, "external:" + info.NearSubtitle} {
-		if !strings.HasPrefix(p, "external:") || p == "external:" || slices.Contains(subPaths, p) {
-			continue
-		}
-		subPaths = append(subPaths, p)
-		file := strings.TrimPrefix(p, "external:")
-		subLabels = append(subLabels, "External: "+file[strings.LastIndexAny(file, `/\`)+1:])
-	}
-	subSel := widget.NewSelect(subLabels, nil)
-	if i := slices.Index(subPaths, sel.SubtitlePath); i >= 0 {
-		subSel.SetSelectedIndex(i)
-	}
-
-	form := container.NewVBox(
-		widget.NewLabel("Video track"), videoSel,
-		widget.NewLabel("Quality"), qualitySel,
-	)
-	if len(audioLabels) > 0 {
-		form.Add(widget.NewLabel("Audio track"))
-		form.Add(audioSel)
-	}
-	form.Add(widget.NewLabel("Subtitle"))
-	form.Add(subSel)
-
-	dialog.ShowCustomConfirm("Tracks", "Apply", "Cancel", form, func(ok bool) {
-		if !ok {
-			return
-		}
-		var change castapi.TrackChange
-		if i := videoSel.SelectedIndex(); i >= 0 && info.VideoTracks[i].Index != sel.VideoTrack {
-			change.VideoTrack = &info.VideoTracks[i].Index
-		}
-		if i := audioSel.SelectedIndex(); i >= 0 && info.AudioTracks[i].Index != sel.AudioTrack {
-			change.AudioTrack = &info.AudioTracks[i].Index
-		}
-		if i := qualitySel.SelectedIndex(); i >= 0 && qualities[i] != sel.Quality {
-			change.Quality = &qualities[i]
-		}
-		if i := subSel.SelectedIndex(); i >= 0 && subPaths[i] != sel.SubtitlePath {
-			change.SubtitlePath = &subPaths[i]
-		}
-		go func() {
-			if _, err := u.client.ChangeTracks(change); err != nil {
-				fyne.Do(func() { u.fail(err) })
-			}
-		}()
-	}, u.window)
-}
-
-func (u *ui) seekRelative(current, delta float64) {
-	target := current + delta
-	if target < 0 {
-		target = 0
-	}
-	go func() {
-		if _, err := u.client.Control("seek", target); err != nil {
-			fyne.Do(func() { u.fail(err) })
-		}
+			p.show(st)
+		})
 	}()
 }

@@ -1,40 +1,22 @@
 package main
 
-import (
-	"fmt"
-)
+import "fmt"
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
+// fmtSec is a playback position, m:ss or h:mm:ss.
 func fmtSec(s float64) string {
-	if s < 0 {
-		s = 0
-	}
-	total := int(s)
-	h := total / 3600
-	m := (total % 3600) / 60
-	sec := total % 60
+	total := int(max(s, 0))
+	h, m, sec := total/3600, total%3600/60, total%60
 	if h > 0 {
 		return fmt.Sprintf("%d:%02d:%02d", h, m, sec)
 	}
 	return fmt.Sprintf("%d:%02d", m, sec)
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-1] + "…"
-}
-
 func fmtSpeed(bps int64) string {
-	if bps <= 0 {
-		return "0 B/s"
-	}
 	f := float64(bps)
 	switch {
+	case bps <= 0:
+		return "0 B/s"
 	case f >= 1<<20:
 		return fmt.Sprintf("%.1f MB/s", f/(1<<20))
 	case f >= 1<<10:
@@ -44,11 +26,13 @@ func fmtSpeed(bps int64) string {
 	}
 }
 
+// fmtEta is a download's time left; qBittorrent reports 8640000 for unknown.
 func fmtEta(sec int64) string {
 	if sec <= 0 || sec >= 8640000 {
 		return "—"
 	}
-	m := sec / 60
-	s := sec % 60
-	return fmt.Sprintf("%dm %ds", m, s)
+	if sec >= 3600 {
+		return fmt.Sprintf("%dh %dm left", sec/3600, sec%3600/60)
+	}
+	return fmt.Sprintf("%dm %ds left", sec/60, sec%60)
 }

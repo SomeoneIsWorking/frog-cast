@@ -3,98 +3,151 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"time"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"wails-cast/pkg/castapi"
 )
 
-// ---------------------------------------------------------------------------
-// Connect screen
-// ---------------------------------------------------------------------------
+const (
+	prefBaseURL = "baseURL"
+	prefName    = "instanceName"
+	prefToken   = "token"
+)
 
+// showConnect lists the instances found on the LAN (searched on open) and
+// offers the last one used and a manual address.
 func (u *ui) showConnect() {
+	u.closeSession()
 	prefs := u.fyneApp.Preferences()
 
-	host := widget.NewEntry()
-	host.SetPlaceHolder("host")
-	port := widget.NewEntry()
-	port.SetPlaceHolder("port")
 	token := widget.NewPasswordEntry()
-	token.SetPlaceHolder("token (optional)")
+	token.SetPlaceHolder("Token (if the instance has one)")
+	token.SetText(prefs.String(prefToken))
 
-	if last := prefs.String(prefBaseURL); last != "" {
-		host.SetText(last)
-	}
-	if lastTok := prefs.String(prefToken); lastTok != "" {
-		token.SetText(lastTok)
+	connect := func(name, base string) {
+		prefs.SetString(prefBaseURL, base)
+		prefs.SetString(prefName, name)
+		prefs.SetString(prefToken, token.Text)
+		u.openSession(name, castapi.New(base, token.Text))
 	}
 
 	var instances []castapi.CastInstance
 	list := widget.NewList(
 		func() int { return len(instances) },
-		func() fyne.CanvasObject { return widget.NewLabel("") },
+		func() fyne.CanvasObject {
+			name := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+			addr := widget.NewLabel("")
+			addr.Importance = widget.LowImportance
+			return container.NewBorder(nil, nil, widget.NewIcon(theme.ComputerIcon()), widget.NewIcon(theme.NavigateNextIcon()),
+				container.NewVBox(name, addr))
+		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
-			inst := instances[i]
-			o.(*widget.Label).SetText(fmt.Sprintf("%s  (%s:%d)", inst.Name, inst.Host, inst.Port))
+			texts := o.(*fyne.Container).Objects[0].(*fyne.Container).Objects
+			texts[0].(*widget.Label).SetText(instances[i].Name)
+			texts[1].(*widget.Label).SetText(fmt.Sprintf("%s:%d", instances[i].Host, instances[i].Port))
 		},
 	)
 	list.OnSelected = func(i widget.ListItemID) {
 		list.Unselect(i)
-		if i < 0 || i >= len(instances) {
-			return
-		}
-		inst := instances[i]
-		prefs.SetString(prefBaseURL, inst.URL)
-		prefs.SetString(prefToken, token.Text)
-		u.client = castapi.New(inst.URL, token.Text)
-		u.showMain()
+		connect(instances[i].Name, instances[i].URL)
 	}
 
-	discover := widget.NewButton("Discover", func() {
+	searching := widget.NewActivity()
+	status := widget.NewLabel("")
+	status.Importance = widget.LowImportance
+	status.Alignment = fyne.TextAlignCenter
+	var rescan *widget.Button
+	search := func() {
+		rescan.Disable()
+		searching.Start()
+		searching.Show()
+		status.SetText("Searching the network…")
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			found, err := castapi.Discover(ctx)
-			if err != nil {
-				fyne.Do(func() { u.fail(err) })
-				return
-			}
-			fyne.Do(func() { instances = found; list.Refresh() })
+			found, err := castapi.Discover(context.Background())
+			fyne.Do(func() {
+				searching.Stop()
+				searching.Hide()
+				rescan.Enable()
+				instances = found
+				list.Refresh()
+				switch {
+				case err != nil:
+					status.SetText("Search failed: " + err.Error())
+				case len(found) == 0:
+					status.SetText("No instances found. Is the remote API on?")
+				default:
+					status.SetText("")
+				}
+			})
 		}()
-	})
+	}
+	rescan = widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), search)
+	rescan.Importance = widget.LowImportance
 
-	connect := widget.NewButton("Connect", func() {
-		p, err := strconv.Atoi(port.Text)
-		if err != nil && port.Text != "" {
-			u.fail(fmt.Errorf("invalid port: %v", err))
-			return
-		}
-		base := host.Text
+	heading := widget.NewLabel("On this network")
+	heading.TextStyle = fyne.TextStyle{Bold: true}
+	found := container.NewBorder(
+		container.NewBorder(nil, nil, nil, container.NewHBox(searching, rescan), heading),
+		status, nil, nil, list)
+
+	address := widget.NewEntry()
+	address.SetPlaceHolder("host:port, e.g. 192.168.1.20:9999")
+	if last := prefs.String(prefBaseURL); last != "" {
+		address.SetText(strings.TrimPrefix(last, "http://"))
+	}
+	manual := widget.NewButtonWithIcon("Connect", theme.LoginIcon(), func() {
+		base := strings.TrimSpace(address.Text)
 		if base == "" {
-			u.fail(fmt.Errorf("host is required"))
+			u.fail(fmt.Errorf("enter the instance's address"))
 			return
 		}
-		if p > 0 {
-			base = fmt.Sprintf("http://%s:%d", host.Text, p)
+		if !strings.Contains(base, "://") {
+			base = "http://" + base
 		}
-		prefs.SetString(prefBaseURL, base)
-		prefs.SetString(prefToken, token.Text)
-		u.client = castapi.New(base, token.Text)
-		u.showMain()
+		connect(strings.TrimPrefix(base, "http://"), base)
 	})
+	manualForm := container.NewVBox(address, token, manual)
+	more := widget.NewAccordion(widget.NewAccordionItem("Connect by address", manualForm))
 
-	form := container.NewVBox(
-		widget.NewLabel("Manual connect"),
-		host, port, token, connect,
-	)
-	top := container.NewVBox(
-		widget.NewLabel("Discover on LAN"),
-		discover,
-	)
-	u.window.SetContent(container.NewBorder(top, form, nil, nil, list))
+	top := []fyne.CanvasObject{heading1("Cast Remote"), caption("Control wails-cast on your network")}
+	if last := prefs.String(prefBaseURL); last != "" {
+		name := prefs.String(prefName)
+		if name == "" {
+			name = strings.TrimPrefix(last, "http://")
+		}
+		again := widget.NewButtonWithIcon("Reconnect to "+name, theme.MediaPlayIcon(), func() { connect(name, last) })
+		again.Importance = widget.HighImportance
+		top = append(top, again)
+	}
+
+	u.window.SetContent(container.NewPadded(container.NewBorder(
+		container.NewVBox(top...), more, nil, nil, found)))
+	search()
+}
+
+// heading1 is a screen title.
+func heading1(text string) *widget.Label {
+	l := widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	l.SizeName = theme.SizeNameHeadingText
+	return l
+}
+
+// caption is secondary text under a title or row, wrapped to its width.
+func caption(text string) *widget.Label {
+	l := note(text)
+	l.Wrapping = fyne.TextWrapWord
+	return l
+}
+
+// note is a one-line secondary text, for places with no width to wrap to
+// (a centered message).
+func note(text string) *widget.Label {
+	l := widget.NewLabel(text)
+	l.Importance = widget.LowImportance
+	return l
 }

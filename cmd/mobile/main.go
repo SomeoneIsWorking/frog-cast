@@ -1,69 +1,38 @@
+// Command mobile is the phone remote for a wails-cast instance on the LAN.
 package main
 
 import (
-	"sync"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/widget"
-
-	"wails-cast/pkg/castapi"
-	"wails-cast/pkg/options"
 )
 
-const (
-	prefBaseURL = "baseURL"
-	prefToken   = "token"
-)
-
-type ui struct {
-	fyneApp fyne.App
-	window  fyne.Window
-	client  *castapi.Client
-
-	tabs *container.AppTabs
-
-	devicesMu sync.Mutex
-	devices   []castapi.RemoteDevice
-	deviceSel *widget.Select
-
-	// Library tab
-	libraryItems []castapi.LibraryItem
-	libraryList  *widget.List
-
-	// Torrents tab
-	torrents    []castapi.TorrentStatus
-	torrentList *widget.List
-	torrentStop chan struct{}
-
-	// Library Mgmt tab
-	currentTree      *castapi.LibraryScanResult
-	mgmtTree         *widget.Tree
-	mgmtIdentifyBtn  *widget.Button
-	mgmtPreviewBtn   *widget.Button
-	seasonStop       chan struct{}
-	seasonBarLabel   *widget.Label
-	seasonBarWrapper *fyne.Container
-
-	// Subtitle state
-	currentSubtitlePath string
-	currentSubtitleOpts options.SubtitleCastOptions
-
-	// Now Playing poller
-	nowPlayingStop chan struct{}
-}
+const appID = "io.wailscast.remote"
 
 func main() {
-	a := app.NewWithID("io.wailscast.remote")
-	w := a.NewWindow("wails-cast remote")
-	w.Resize(fyne.NewSize(420, 720))
+	a := app.NewWithID(appID)
+	w := a.NewWindow("Cast Remote")
+	w.Resize(fyne.NewSize(400, 820))
 
 	u := &ui{fyneApp: a, window: w}
 	u.showConnect()
+	w.SetOnClosed(u.closeSession)
 
 	w.ShowAndRun()
 }
 
+// ui owns the window: the connect screen, or a session with an instance.
+type ui struct {
+	fyneApp fyne.App
+	window  fyne.Window
+	session *session
+}
+
 func (u *ui) fail(err error) { dialog.ShowError(err, u.window) }
+
+func (u *ui) closeSession() {
+	if u.session != nil {
+		u.session.close()
+		u.session = nil
+	}
+}
