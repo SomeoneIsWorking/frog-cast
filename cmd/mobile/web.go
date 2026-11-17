@@ -69,8 +69,8 @@ func newWebView(s *session) *webView {
 	v.status = caption("")
 	v.status.Hide()
 
-	v.recent = widget.NewLabelWithStyle("Recent pages", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	v.list = widget.NewList(
+	v.recent = section("RECENT PAGES")
+	v.list = cardList(
 		func() int { return len(v.pages) },
 		func() fyne.CanvasObject { return newRow(theme.MediaVideoIcon()) },
 		func(i widget.ListItemID, o fyne.CanvasObject) {
@@ -83,7 +83,7 @@ func newWebView(s *session) *webView {
 			if u, err := url.Parse(page.URL); err == nil {
 				host = u.Host
 			}
-			setRow(o, title, host)
+			o.(*row).set(title, host)
 		},
 	)
 	v.list.OnSelected = func(i widget.ListItemID) {
@@ -92,14 +92,14 @@ func newWebView(s *session) *webView {
 	}
 	v.recent.Hidden = len(v.pages) == 0
 
-	top := container.NewVBox(container.NewBorder(nil, nil, nil, paste, v.link), form, v.cast, v.status, widget.NewSeparator(), v.recent)
-	v.content = container.NewBorder(container.NewPadded(top), nil, nil, nil, v.list)
+	top := container.NewVBox(container.NewBorder(nil, nil, nil, paste, v.link), form, v.cast, v.status, v.recent)
+	v.content = container.NewBorder(top, nil, nil, nil, v.list)
 	return v
 }
 
 // share shows a link shared to the app, ready to cast.
 func (v *webView) share(link string) {
-	v.s.tabs.SelectIndex(0)
+	v.s.tabs.Select(tabLibrary)
 	if v.s.library.pages.top() != v.content {
 		v.s.library.pages.push("Web page", v.content)
 	}

@@ -5,6 +5,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -36,7 +37,7 @@ type nowPlaying struct {
 func newNowPlaying(s *session) *nowPlaying {
 	p := &nowPlaying{s: s}
 
-	p.where = caption("")
+	p.where = section("")
 	p.title = heading1("")
 	p.title.Wrapping = fyne.TextWrapWord
 
@@ -54,20 +55,22 @@ func newNowPlaying(s *session) *nowPlaying {
 
 	p.playPause = widget.NewButtonWithIcon("", theme.MediaPauseIcon(), p.togglePause)
 	p.playPause.Importance = widget.HighImportance
-	skip := func(icon fyne.Resource, by float64) *widget.Button {
-		return widget.NewButtonWithIcon("", icon, func() { p.seekBy(by) })
+	skip := func(icon fyne.Resource, label string, by float64) fyne.CanvasObject {
+		b := widget.NewButtonWithIcon("", icon, func() { p.seekBy(by) })
+		b.Importance = widget.LowImportance
+		l := note(label)
+		l.Alignment = fyne.TextAlignCenter
+		l.SizeName = theme.SizeNameCaptionText
+		return container.New(layout.NewCustomPaddedVBoxLayout(-10), b, l)
 	}
+	play := container.NewGridWrap(fyne.NewSize(56, 52), p.playPause)
 	transport := container.NewGridWithColumns(5,
-		skip(theme.MediaSkipPreviousIcon(), -30),
-		skip(theme.MediaFastRewindIcon(), -10),
-		p.playPause,
-		skip(theme.MediaFastForwardIcon(), 10),
-		skip(theme.MediaSkipNextIcon(), 30),
+		skip(theme.MediaSkipPreviousIcon(), "30s", -30),
+		skip(theme.MediaFastRewindIcon(), "10s", -10),
+		container.NewCenter(play),
+		skip(theme.MediaFastForwardIcon(), "10s", 10),
+		skip(theme.MediaSkipNextIcon(), "30s", 30),
 	)
-	jumps := container.NewGridWithColumns(5, note("−30s"), note("−10s"), widget.NewLabel(""), note("+10s"), note("+30s"))
-	for _, o := range jumps.Objects {
-		o.(*widget.Label).Alignment = fyne.TextAlignCenter
-	}
 
 	p.volume = widget.NewSlider(0, 1)
 	p.volume.Step = 0.01
@@ -88,32 +91,25 @@ func newNowPlaying(s *session) *nowPlaying {
 	stop := widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), func() { p.control("stop", 0) })
 	stop.Importance = widget.DangerImportance
 
-	p.active = container.NewVBox(
-		p.where,
-		p.title,
-		widget.NewSeparator(),
-		p.position,
-		container.NewBorder(nil, nil, p.elapsed, p.remaining),
+	p.elapsed.SizeName = theme.SizeNameCaptionText
+	p.remaining.SizeName = theme.SizeNameCaptionText
+	p.elapsed.Importance = widget.LowImportance
+	p.remaining.Importance = widget.LowImportance
+	player := card(container.NewVBox(
+		container.New(layout.NewCustomPaddedVBoxLayout(-14), p.where, p.title),
+		container.New(layout.NewCustomPaddedVBoxLayout(-12), p.position, container.NewBorder(nil, nil, p.elapsed, p.remaining)),
 		transport,
-		jumps,
-		widget.NewSeparator(),
-		container.NewBorder(nil, nil, p.mute, nil, p.volume),
+	))
+	p.active = container.NewVBox(
+		player,
+		card(container.NewBorder(nil, nil, p.mute, nil, p.volume)),
 		container.NewGridWithColumns(2, subtitles, tracks),
-		layoutSpacer(),
 		stop,
 	)
-	p.idle = container.NewCenter(container.NewVBox(
-		widget.NewIcon(theme.MediaVideoIcon()),
-		widget.NewLabelWithStyle("Nothing is playing", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}),
-		note("Pick an episode in Library."),
-	))
+	p.idle = emptyState(theme.MediaVideoIcon(), "Nothing is playing", "Pick an episode or cast a web page.")
 	p.active.Hide()
-	p.content = container.NewPadded(container.NewStack(p.idle, container.NewVScroll(p.active)))
+	p.content = container.NewStack(p.idle, container.NewVScroll(p.active))
 	return p
-}
-
-func layoutSpacer() fyne.CanvasObject {
-	return container.NewPadded(widget.NewLabel(""))
 }
 
 // setPolling starts or stops following the instance's state.

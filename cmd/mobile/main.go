@@ -11,6 +11,7 @@ const appID = "io.frogcast.remote"
 
 func main() {
 	a := app.NewWithID(appID)
+	a.Settings().SetTheme(frogTheme{})
 	w := a.NewWindow("Frog Cast Remote")
 	w.Resize(fyne.NewSize(400, 820))
 

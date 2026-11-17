@@ -50,29 +50,23 @@ func newManageView(s *session) *manageView {
 	v.identify.Disable()
 	v.organize.Disable()
 
-	v.list = widget.NewList(
+	v.list = cardList(
 		func() int { return len(v.seasons) },
 		func() fyne.CanvasObject {
-			title := widget.NewLabel("")
-			title.Truncation = fyne.TextTruncateEllipsis
-			detail := caption("")
-			detail.Wrapping = fyne.TextWrapOff
-			translate := widget.NewButtonWithIcon("", theme.DocumentIcon(), nil)
-			return container.NewBorder(nil, nil, nil, translate, container.NewVBox(title, detail))
+			translate := widget.NewButtonWithIcon("Translate", theme.DocumentIcon(), nil)
+			return newRowWith(theme.FolderIcon(), translate)
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			ref := v.seasons[i]
-			box := o.(*fyne.Container)
-			texts := box.Objects[0].(*fyne.Container).Objects
-			texts[0].(*widget.Label).SetText(ref.show + " · " + ref.season.Name)
+			r := o.(*row)
 			translated := 0
 			for _, e := range ref.season.Episodes {
 				if e.Translated {
 					translated++
 				}
 			}
-			texts[1].(*widget.Label).SetText(fmt.Sprintf("%s · %d translated", plural(len(ref.season.Episodes), "episode"), translated))
-			box.Objects[1].(*widget.Button).OnTapped = func() { v.promptTranslate(ref) }
+			r.set(ref.show+" · "+ref.season.Name, fmt.Sprintf("%s · %d translated", plural(len(ref.season.Episodes), "episode"), translated))
+			r.trail.(*widget.Button).OnTapped = func() { v.promptTranslate(ref) }
 		},
 	)
 	v.list.OnSelected = func(i widget.ListItemID) { v.list.Unselect(i) }
@@ -90,14 +84,14 @@ func newManageView(s *session) *manageView {
 		}()
 	})
 	cancel.Importance = widget.LowImportance
-	v.progressBox = container.NewBorder(nil, nil, nil, cancel, container.NewVBox(v.progressText, v.progress))
+	v.progressBox = card(container.NewBorder(nil, nil, nil, cancel, container.NewVBox(v.progressText, v.progress)))
 	v.progressBox.Hide()
 
 	top := container.NewVBox(
 		container.NewGridWithColumns(3, scan, v.identify, v.organize),
-		caption("Translate a season's subtitles with the button beside it."),
+		section("SEASONS · TRANSLATE SUBTITLES"),
 	)
-	v.content = container.NewPadded(container.NewBorder(top, container.NewVBox(v.status, v.progressBox), nil, nil, v.list))
+	v.content = container.NewBorder(top, container.NewVBox(v.status, v.progressBox), nil, nil, v.list)
 	v.scan()
 	v.followSeason()
 	return v
@@ -181,7 +175,7 @@ func (v *manageView) showOrganize(plan []castapi.OrganizeMove) {
 		dialog.ShowInformation("Organize", "Everything is already in place.", v.s.ui.window)
 		return
 	}
-	list := widget.NewList(
+	list := cardList(
 		func() int { return len(plan) },
 		func() fyne.CanvasObject { l := widget.NewLabel(""); l.Wrapping = fyne.TextWrapWord; return l },
 		func(i widget.ListItemID, o fyne.CanvasObject) { o.(*widget.Label).SetText(plan[i].Description) },

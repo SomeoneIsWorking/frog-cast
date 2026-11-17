@@ -2,11 +2,21 @@ package main
 
 import (
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"frog-cast/pkg/castapi"
+)
+
+// The tabs, in bar order.
+const (
+	tabLibrary = iota
+	tabPlaying
+	tabTorrents
+	tabManage
 )
 
 // session is the connected app: one instance, its cast targets and the tabs.
@@ -16,14 +26,12 @@ type session struct {
 	client  *castapi.Client
 	targets *targetPicker
 
-	tabs       *container.AppTabs
-	playingTab *container.TabItem
-	torrentTab *container.TabItem
-	library    *libraryView
-	web        *webView
-	playing    *nowPlaying
-	torrents   *torrentsView
-	manage     *manageView
+	tabs     *navTabs
+	library  *libraryView
+	web      *webView
+	playing  *nowPlaying
+	torrents *torrentsView
+	manage   *manageView
 }
 
 func (u *ui) openSession(name string, client *castapi.Client) {
@@ -36,25 +44,16 @@ func (u *ui) openSession(name string, client *castapi.Client) {
 	s.torrents = newTorrentsView(s)
 	s.manage = newManageView(s)
 
-	s.playingTab = container.NewTabItemWithIcon("Playing", theme.MediaPlayIcon(), s.playing.content)
-	s.torrentTab = container.NewTabItemWithIcon("Torrents", theme.DownloadIcon(), s.torrents.content)
-	s.tabs = container.NewAppTabs(
-		container.NewTabItemWithIcon("Library", theme.ListIcon(), s.library.content),
-		s.playingTab,
-		s.torrentTab,
-		container.NewTabItemWithIcon("Manage", theme.SettingsIcon(), s.manage.content),
+	s.tabs = newNavTabs(
+		navTab{"Library", theme.ListIcon(), s.library.content},
+		navTab{"Playing", theme.MediaPlayIcon(), s.playing.content},
+		navTab{"Torrents", theme.DownloadIcon(), s.torrents.content},
+		navTab{"Manage", theme.SettingsIcon(), s.manage.content},
 	)
-	s.tabs.SetTabLocation(container.TabLocationBottom)
-	s.tabs.OnSelected = func(*container.TabItem) { s.pollVisibleTab() }
-
-	disconnect := widget.NewButtonWithIcon("", theme.LogoutIcon(), u.showConnect)
-	disconnect.Importance = widget.LowImportance
-	title := widget.NewLabelWithStyle(name, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	title.Truncation = fyne.TextTruncateEllipsis
-	bar := container.NewBorder(nil, nil, widget.NewIcon(theme.ComputerIcon()), disconnect, title)
+	s.tabs.OnSelected = func(int) { s.pollVisibleTab() }
 
 	u.session = s
-	u.window.SetContent(container.NewBorder(container.NewPadded(bar), nil, nil, nil, s.tabs))
+	u.window.SetContent(container.NewBorder(s.appBar(), nil, nil, nil, s.tabs.content))
 
 	s.targets.load()
 	u.takeShare()
@@ -70,24 +69,38 @@ func (u *ui) openSession(name string, client *castapi.Client) {
 				return
 			}
 			if st.Status != "STOPPED" {
-				s.tabs.Select(s.playingTab)
+				s.tabs.Select(tabPlaying)
 			}
 			s.pollVisibleTab()
 		})
 	}()
 }
 
+// appBar names the instance, with a way back to the instance list.
+func (s *session) appBar() fyne.CanvasObject {
+	dot := canvas.NewCircle(colorSuccess)
+	name := widget.NewLabelWithStyle(s.name, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	name.SizeName = theme.SizeNameSubHeadingText
+	name.Truncation = fyne.TextTruncateEllipsis
+	sub := section("CONNECTED · FROG CAST")
+	texts := container.New(layout.NewCustomPaddedVBoxLayout(-14), sub, name)
+	disconnect := widget.NewButtonWithIcon("Switch", theme.LogoutIcon(), s.ui.showConnect)
+	disconnect.Importance = widget.LowImportance
+	mark := container.NewCenter(container.NewGridWrap(fyne.NewSize(10, 10), dot))
+	bar := container.NewBorder(nil, nil, mark, container.NewCenter(disconnect), texts)
+	return container.New(layout.NewCustomPaddedLayout(8, 4, 14, 8), bar)
+}
+
 // showPlaying switches to the Playing tab, e.g. after starting a cast.
 func (s *session) showPlaying() {
-	s.tabs.Select(s.playingTab)
-	s.pollVisibleTab()
+	s.tabs.Select(tabPlaying)
 }
 
 // pollVisibleTab polls only what's on screen.
 func (s *session) pollVisibleTab() {
 	selected := s.tabs.Selected()
-	s.playing.setPolling(selected == s.playingTab)
-	s.torrents.setPolling(selected == s.torrentTab)
+	s.playing.setPolling(selected == tabPlaying)
+	s.torrents.setPolling(selected == tabTorrents)
 }
 
 func (s *session) close() {

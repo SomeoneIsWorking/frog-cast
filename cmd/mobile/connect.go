@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -44,19 +45,11 @@ func (u *ui) showConnect() {
 	}
 
 	var instances []castapi.CastInstance
-	list := widget.NewList(
+	list := cardList(
 		func() int { return len(instances) },
-		func() fyne.CanvasObject {
-			name := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-			addr := widget.NewLabel("")
-			addr.Importance = widget.LowImportance
-			return container.NewBorder(nil, nil, widget.NewIcon(theme.ComputerIcon()), widget.NewIcon(theme.NavigateNextIcon()),
-				container.NewVBox(name, addr))
-		},
+		func() fyne.CanvasObject { return newRow(theme.ComputerIcon()) },
 		func(i widget.ListItemID, o fyne.CanvasObject) {
-			texts := o.(*fyne.Container).Objects[0].(*fyne.Container).Objects
-			texts[0].(*widget.Label).SetText(instances[i].Name)
-			texts[1].(*widget.Label).SetText(fmt.Sprintf("%s:%d", instances[i].Host, instances[i].Port))
+			o.(*row).set(instances[i].Name, fmt.Sprintf("%s:%d", instances[i].Host, instances[i].Port))
 		},
 	)
 	list.OnSelected = func(i widget.ListItemID) {
@@ -102,8 +95,7 @@ func (u *ui) showConnect() {
 	rescan = widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), search)
 	rescan.Importance = widget.LowImportance
 
-	heading := widget.NewLabel("On this network")
-	heading.TextStyle = fyne.TextStyle{Bold: true}
+	heading := section("ON THIS NETWORK")
 	found := container.NewBorder(
 		container.NewBorder(nil, nil, nil, container.NewHBox(searching, rescan), heading),
 		status, nil, nil, list)
@@ -127,36 +119,17 @@ func (u *ui) showConnect() {
 	manualForm := container.NewVBox(address, token, manual)
 	more := widget.NewAccordion(widget.NewAccordionItem("Connect by address", manualForm))
 
-	top := []fyne.CanvasObject{heading1("Frog Cast Remote"), caption("Control Frog Cast on your network")}
+	logo, _ := badge(theme.MediaVideoIcon())
+	hero := container.NewBorder(nil, nil, container.NewCenter(logo), nil, container.New(layout.NewCustomPaddedVBoxLayout(-16),
+		heading1("Frog Cast"), note("Remote for the casts on your network")))
+	top := []fyne.CanvasObject{container.New(layout.NewCustomPaddedLayout(12, 12, 0, 0), hero)}
 	if last != "" {
 		again := widget.NewButtonWithIcon("Reconnect to "+lastName, theme.MediaPlayIcon(), func() { connect(lastName, last) })
 		again.Importance = widget.HighImportance
 		top = append(top, again)
 	}
 
-	u.window.SetContent(container.NewPadded(container.NewBorder(
-		container.NewVBox(top...), more, nil, nil, found)))
+	u.window.SetContent(container.New(layout.NewCustomPaddedLayout(12, 12, 14, 14), container.NewBorder(
+		container.NewVBox(top...), card(more), nil, nil, found)))
 	search()
-}
-
-// heading1 is a screen title.
-func heading1(text string) *widget.Label {
-	l := widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	l.SizeName = theme.SizeNameHeadingText
-	return l
-}
-
-// caption is secondary text under a title or row, wrapped to its width.
-func caption(text string) *widget.Label {
-	l := note(text)
-	l.Wrapping = fyne.TextWrapWord
-	return l
-}
-
-// note is a one-line secondary text, for places with no width to wrap to
-// (a centered message).
-func note(text string) *widget.Label {
-	l := widget.NewLabel(text)
-	l.Importance = widget.LowImportance
-	return l
 }

@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -20,31 +21,31 @@ type torrentsView struct {
 	content  fyne.CanvasObject
 	torrents []castapi.TorrentStatus
 	list     *widget.List
-	empty    *widget.Label
+	empty    fyne.CanvasObject
 	stopPoll chan struct{}
 }
 
 func newTorrentsView(s *session) *torrentsView {
 	v := &torrentsView{s: s}
-	v.list = widget.NewList(
+	v.list = cardList(
 		func() int { return len(v.torrents) },
 		func() fyne.CanvasObject {
-			name := widget.NewLabel("")
+			name := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 			name.Truncation = fyne.TextTruncateEllipsis
-			detail := caption("")
-			detail.Wrapping = fyne.TextWrapOff
-			return container.NewVBox(name, widget.NewProgressBar(), detail)
+			detail := note("")
+			detail.SizeName = theme.SizeNameCaptionText
+			box := container.New(layout.NewCustomPaddedVBoxLayout(0), name, widget.NewProgressBar(), detail)
+			return container.New(layout.NewCustomPaddedLayout(3, 3, 0, 0), compactCard(box))
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			t := v.torrents[i]
-			box := o.(*fyne.Container).Objects
+			box := o.(*fyne.Container).Objects[0].(*fyne.Container).Objects[1].(*fyne.Container).Objects[0].(*fyne.Container).Objects
 			box[0].(*widget.Label).SetText(t.Name)
 			box[1].(*widget.ProgressBar).SetValue(t.Progress)
 			box[2].(*widget.Label).SetText(fmt.Sprintf("%s · %s · %s", t.State, fmtSpeed(t.DlSpeed), fmtEta(t.Eta)))
 		},
 	)
-	v.empty = note("No downloads.")
-	v.empty.Alignment = fyne.TextAlignCenter
+	v.empty = emptyState(theme.DownloadIcon(), "No downloads", "Paste a magnet link above to start one.")
 
 	magnet := widget.NewEntry()
 	magnet.SetPlaceHolder("Paste a magnet link")
@@ -67,7 +68,7 @@ func newTorrentsView(s *session) *torrentsView {
 	})
 	add.Importance = widget.HighImportance
 	top := container.NewBorder(nil, nil, nil, add, magnet)
-	v.content = container.NewPadded(container.NewBorder(top, nil, nil, nil, container.NewStack(v.list, container.NewCenter(v.empty))))
+	v.content = container.NewBorder(container.NewVBox(top, section("DOWNLOADS")), nil, nil, nil, container.NewStack(v.list, v.empty))
 	return v
 }
 
@@ -107,8 +108,11 @@ func (v *torrentsView) pollOnce() {
 		}
 		fyne.Do(func() {
 			v.torrents = list
-			v.empty.Hidden = len(list) > 0
-			v.empty.Refresh()
+			if len(list) > 0 {
+				v.empty.Hide()
+			} else {
+				v.empty.Show()
+			}
 			v.list.Refresh()
 		})
 	}()

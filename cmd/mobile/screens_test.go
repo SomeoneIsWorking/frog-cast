@@ -10,7 +10,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/theme"
 
 	"frog-cast/pkg/castapi"
 )
@@ -29,7 +28,7 @@ func TestRenderScreens(t *testing.T) {
 		t.Skip("pass -shots and -base to render")
 	}
 	a := test.NewTempApp(t)
-	a.Settings().SetTheme(theme.DarkTheme())
+	a.Settings().SetTheme(frogTheme{})
 	w := test.NewWindow(nil)
 	w.Resize(fyne.NewSize(390, 844))
 	u := &ui{fyneApp: a, window: w}
@@ -52,7 +51,7 @@ func TestRenderScreens(t *testing.T) {
 	u.openSession("fedora", castapi.New(*base, ""))
 	s := u.session
 	time.Sleep(2 * time.Second)
-	s.tabs.SelectIndex(0)
+	s.tabs.Select(tabLibrary)
 	snap("2-library")
 
 	tree, err := s.client.LibraryTree()
@@ -69,6 +68,10 @@ func TestRenderScreens(t *testing.T) {
 
 	s.showPlaying()
 	snap("5-playing")
+	s.playing.setPolling(false)
+	s.playing.show(&castapi.PlaybackState{Status: "PLAYING", MediaName: "Frieren - Beyond Journey's End · E01",
+		DeviceURL: "local", CurrentTime: 312, Duration: 1440, Volume: 0.6})
+	snap("5b-playing-active")
 	if st := s.playing.state; st != nil && st.Status != "STOPPED" {
 		s.showTracksSheet(st)
 		snap("6-tracks")
@@ -78,11 +81,11 @@ func TestRenderScreens(t *testing.T) {
 		closeOverlays(w)
 	}
 
-	s.tabs.Select(s.torrentTab)
+	s.tabs.Select(tabTorrents)
 	snap("8-torrents")
-	s.tabs.SelectIndex(len(s.tabs.Items) - 1)
+	s.tabs.Select(tabManage)
 	snap("9-manage")
-	s.tabs.SelectIndex(0)
+	s.tabs.Select(tabLibrary)
 	s.library.pages.back()
 	s.library.pages.back()
 	s.web.remember(webPage{URL: "https://hlsjs.video-dev.org/demo/", Title: "hls.js demo"})

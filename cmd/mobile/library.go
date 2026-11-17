@@ -30,7 +30,7 @@ type libraryView struct {
 func newLibraryView(s *session) *libraryView {
 	v := &libraryView{s: s}
 
-	v.list = widget.NewList(
+	v.list = cardList(
 		func() int { return len(v.filtered) },
 		func() fyne.CanvasObject { return newRow(theme.FolderIcon()) },
 		func(i widget.ListItemID, o fyne.CanvasObject) {
@@ -39,7 +39,7 @@ func newLibraryView(s *session) *libraryView {
 			if show.Year > 0 {
 				title = fmt.Sprintf("%s (%d)", show.Name, show.Year)
 			}
-			setRow(o, title, countText(show))
+			o.(*row).set(title, countText(show))
 		},
 	)
 	v.list.OnSelected = func(i widget.ListItemID) {
@@ -53,18 +53,16 @@ func newLibraryView(s *session) *libraryView {
 	search.OnChanged = func(q string) { v.filter(q) }
 
 	refresh := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), v.reload)
-	refresh.Importance = widget.LowImportance
 
 	v.status = caption("Loading…")
 	v.status.Alignment = fyne.TextAlignCenter
 
-	web := widget.NewButtonWithIcon("Web page", theme.MediaVideoIcon(), func() {
-		v.pages.push("Web page", s.web.content)
-	})
-	web.Importance = widget.LowImportance
+	webRow := newRow(theme.MediaVideoIcon())
+	webRow.set("Cast a web page", "Paste a link, or share one from the browser")
+	web := newTapCard(webRow, func() { v.pages.push("Web page", s.web.content) })
 
 	root := container.NewBorder(
-		container.NewBorder(nil, nil, nil, container.NewHBox(web, refresh), search),
+		container.NewVBox(container.NewBorder(nil, nil, nil, refresh, search), web, section("SHOWS")),
 		v.status, nil, nil, v.list)
 	v.pages = newPageStack(root)
 	v.content = v.pages.content
@@ -111,12 +109,12 @@ func (v *libraryView) openShow(show castapi.LibraryShow) {
 		v.openSeason(show, show.Seasons[0])
 		return
 	}
-	list := widget.NewList(
+	list := cardList(
 		func() int { return len(show.Seasons) },
 		func() fyne.CanvasObject { return newRow(theme.FolderIcon()) },
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			season := show.Seasons[i]
-			setRow(o, season.Name, plural(len(season.Episodes), "episode"))
+			o.(*row).set(season.Name, plural(len(season.Episodes), "episode"))
 		},
 	)
 	list.OnSelected = func(i widget.ListItemID) {
@@ -127,12 +125,12 @@ func (v *libraryView) openShow(show castapi.LibraryShow) {
 }
 
 func (v *libraryView) openSeason(show castapi.LibraryShow, season castapi.LibrarySeason) {
-	list := widget.NewList(
+	list := cardList(
 		func() int { return len(season.Episodes) },
 		func() fyne.CanvasObject { return newRow(theme.MediaVideoIcon()) },
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			ep := season.Episodes[i]
-			setRow(o, episodeTitle(ep), episodeNotes(ep))
+			o.(*row).set(episodeTitle(ep), episodeNotes(ep))
 		},
 	)
 	list.OnSelected = func(i widget.ListItemID) {
@@ -185,23 +183,6 @@ func plural(n int, word string) string {
 		return "1 " + word
 	}
 	return fmt.Sprintf("%d %ss", n, word)
-}
-
-// newRow is a list row: icon, title, a line of detail and a chevron.
-func newRow(icon fyne.Resource) fyne.CanvasObject {
-	title := widget.NewLabel("")
-	title.Truncation = fyne.TextTruncateEllipsis
-	detail := widget.NewLabel("")
-	detail.Importance = widget.LowImportance
-	detail.Truncation = fyne.TextTruncateEllipsis
-	return container.NewBorder(nil, nil, widget.NewIcon(icon), widget.NewIcon(theme.NavigateNextIcon()),
-		container.NewVBox(title, detail))
-}
-
-func setRow(o fyne.CanvasObject, title, detail string) {
-	texts := o.(*fyne.Container).Objects[0].(*fyne.Container).Objects
-	texts[0].(*widget.Label).SetText(title)
-	texts[1].(*widget.Label).SetText(detail)
 }
 
 // showPlaySheet picks the target, audio, subtitles and quality for an item
