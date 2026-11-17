@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"sync"
 	"testing"
@@ -96,13 +99,16 @@ func newTestApp(t *testing.T) (*App, *fakeReceiver) {
 
 func TestUpdateSubtitleSettingsEmptyPathKeepsSource(t *testing.T) {
 	a, fake := newTestApp(t)
-	a.subtitlePath = "external:/media/show.srt"
+	a.streamOptions = &options.StreamOptions{Subtitle: options.SubtitleCastOptions{Path: "external:/media/show.srt"}}
 
 	if err := a.UpdateSubtitleSettings(options.SubtitleCastOptions{FontSize: 30}); err != nil {
 		t.Fatal(err)
 	}
-	if a.subtitlePath != "external:/media/show.srt" {
-		t.Fatalf("subtitle source changed to %q", a.subtitlePath)
+	if got := a.streamOptions.Subtitle.Path; got != "external:/media/show.srt" {
+		t.Fatalf("subtitle source changed to %q", got)
+	}
+	if got := a.streamOptions.Subtitle.FontSize; got != 30 {
+		t.Fatalf("font size = %d, want 30", got)
 	}
 	if len(fake.custom) != 1 || fake.custom[0] != "subtitles" {
 		t.Fatalf("external subtitles not re-sent: %v", fake.custom)
@@ -111,7 +117,7 @@ func TestUpdateSubtitleSettingsEmptyPathKeepsSource(t *testing.T) {
 
 func TestUpdateSubtitleSettingsSeeksToExtrapolatedPosition(t *testing.T) {
 	a, fake := newTestApp(t)
-	a.subtitlePath = "none"
+	a.streamOptions = &options.StreamOptions{Subtitle: options.SubtitleCastOptions{Path: "none"}}
 	a.playbackState = PlaybackState{Status: "PLAYING", CurrentTime: 100, Duration: 3600}
 	a.positionAt = time.Now().Add(-90 * time.Second)
 
@@ -123,5 +129,65 @@ func TestUpdateSubtitleSettingsSeeksToExtrapolatedPosition(t *testing.T) {
 	}
 	if got := fake.seeks[0]; got < 189 || got > 192 {
 		t.Fatalf("re-seeked to %v, want about 190", got)
+	}
+}
+
+func TestStateReportsSelection(t *testing.T) {
+	a, _ := newTestApp(t)
+	a.playbackState = PlaybackState{Status: "PAUSED", MediaPath: "/media/film.mkv"}
+	a.streamOptions = &options.StreamOptions{
+		VideoTrack: 1,
+		AudioTrack: 2,
+		Bitrate:    "3M",
+		Subtitle: options.SubtitleCastOptions{
+			Path:         "embedded:3",
+			FontSize:     40,
+			Italic:       true,
+			DelaySeconds: -1.5,
+			BurnIn:       true,
+		},
+	}
+
+	rec := httptest.NewRecorder()
+	NewHTTPServer(a).handleState(rec, httptest.NewRequest(http.MethodGet, "/state", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	sel, ok := raw["selection"].(map[string]any)
+	if !ok {
+		t.Fatalf("no selection in %s", rec.Body)
+	}
+	want := map[string]any{
+		"videoTrack":   1.0,
+		"audioTrack":   2.0,
+		"quality":      "3M",
+		"subtitlePath": "embedded:3",
+		"fontSize":     40.0,
+		"bold":         false,
+		"italic":       true,
+		"delaySeconds": -1.5,
+		"burnIn":       true,
+	}
+	for k, v := range want {
+		if sel[k] != v {
+			t.Errorf("selection.%s = %v, want %v", k, sel[k], v)
+		}
+	}
+}
+
+func TestStateOmitsSelectionBeforeFirstCast(t *testing.T) {
+	a, _ := newTestApp(t)
+	rec := httptest.NewRecorder()
+	NewHTTPServer(a).handleState(rec, httptest.NewRequest(http.MethodGet, "/state", nil))
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["selection"]; ok {
+		t.Fatalf("selection present before any cast: %s", rec.Body)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	wails_runtime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"wails-cast/pkg/ai"
+	"wails-cast/pkg/castapi"
 	"wails-cast/pkg/events"
 	"wails-cast/pkg/ffmpeg"
 	"wails-cast/pkg/folders"
@@ -46,11 +47,10 @@ type App struct {
 	// only reports its position on status changes, so remote clients get the
 	// position extrapolated from here (see currentPlaybackState).
 	positionAt time.Time
-	// subtitlePath is the subtitle source of the current cast ("none",
-	// "external:<file>" or "embedded:<n>"). A subtitle update with an empty
-	// Path keeps it, so a controller that doesn't know the source can still
-	// restyle subtitles without turning them off.
-	subtitlePath  string
+	// streamOptions is what the current cast plays: tracks, quality and
+	// subtitle source and style. Live changes update it; /state reports it.
+	// nil until the first cast.
+	streamOptions *options.StreamOptions
 	historyStore  *HistoryStore
 	settingsStore *SettingsStore
 	mu            sync.RWMutex
@@ -266,7 +266,7 @@ func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *o
 	a.playbackState.DeviceURL = deviceIp
 	a.playbackState.DeviceName = extractDeviceName(deviceIp)
 	a.playbackState.Duration = duration
-	a.subtitlePath = options.Subtitle.Path
+	a.streamOptions = &options
 	a.mu.Unlock()
 
 	if deviceIp == "local" {
@@ -276,12 +276,11 @@ func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *o
 		a.playbackState.Status = "PLAYING"
 		a.playbackState.CurrentTime = 0
 		a.positionAt = time.Now()
-		state := a.playbackState
+		state := a.stateLocked()
 		a.mu.Unlock()
 		a.historyStore.Add(fileNameOrUrl, name, castOptions)
-		// Notify the desktop UI (and any remote clients) of the new state.
 		events.Emit("playback:state", state)
-		return &a.playbackState, nil
+		return &state, nil
 	}
 
 	mediaURL := a.getMediaURL()
@@ -329,12 +328,11 @@ func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *o
 	a.playbackState.Status = "PLAYING"
 	a.playbackState.CurrentTime = 0
 	a.positionAt = time.Now()
-	state := a.playbackState
+	state := a.stateLocked()
 	a.mu.Unlock()
-	// Notify the desktop UI (and any remote clients) of the new state.
 	events.Emit("playback:state", state)
 
-	return &a.playbackState, nil
+	return &state, nil
 }
 
 // GetMediaFiles returns media files from a directory
@@ -391,7 +389,7 @@ func (a *App) SeekTo(seekTime float64) error {
 	a.mu.Lock()
 	a.playbackState.CurrentTime = seekTime
 	a.positionAt = time.Now()
-	state := a.playbackState
+	state := a.stateLocked()
 	a.mu.Unlock()
 	events.Emit("playback:state", state)
 
@@ -409,15 +407,16 @@ func (a *App) SeekTo(seekTime float64) error {
 // An empty Path keeps the current cast's subtitle source.
 func (a *App) UpdateSubtitleSettings(opts options.SubtitleCastOptions) error {
 	a.mu.Lock()
-	if opts.Path == "" {
-		opts.Path = a.subtitlePath
-	} else {
-		a.subtitlePath = opts.Path
+	if opts.Path == "" && a.streamOptions != nil {
+		opts.Path = a.streamOptions.Subtitle.Path
 	}
-	a.mu.Unlock()
 	if opts.Path == "" {
 		opts.Path = "none"
 	}
+	if a.streamOptions != nil {
+		a.streamOptions.Subtitle = opts
+	}
+	a.mu.Unlock()
 
 	// Update subtitle path + full options on the live handler (clears cache).
 	a.mediaServer.SetSubtitlePath(opts.Path)
@@ -439,7 +438,9 @@ func (a *App) UpdateSubtitleSettings(opts options.SubtitleCastOptions) error {
 	// minutes old and would jump the video back.
 	a.mu.RLock()
 	position := a.extrapolatedPosition()
+	state := a.stateLocked()
 	a.mu.RUnlock()
+	events.Emit("playback:state", state)
 	return a.App.SeekToTime(float32(position))
 }
 
@@ -504,7 +505,7 @@ func (a *App) Pause() error {
 	a.playbackState.CurrentTime = a.extrapolatedPosition()
 	a.positionAt = time.Now()
 	a.playbackState.Status = "PAUSED"
-	state := a.playbackState
+	state := a.stateLocked()
 	a.mu.Unlock()
 	events.Emit("playback:state", state)
 	return nil
@@ -520,7 +521,7 @@ func (a *App) Unpause() error {
 	a.mu.Lock()
 	a.positionAt = time.Now()
 	a.playbackState.Status = "PLAYING"
-	state := a.playbackState
+	state := a.stateLocked()
 	a.mu.Unlock()
 	events.Emit("playback:state", state)
 	return nil
@@ -537,8 +538,9 @@ func (a *App) SetVolume(value float32) error {
 	}
 	a.mu.Lock()
 	a.playbackState.Volume = float64(value)
+	state := a.stateLocked()
 	a.mu.Unlock()
-	events.Emit("playback:state", a.playbackState)
+	events.Emit("playback:state", state)
 	return nil
 }
 
@@ -553,8 +555,9 @@ func (a *App) SetMuted(muted bool) error {
 	}
 	a.mu.Lock()
 	a.playbackState.Muted = muted
+	state := a.stateLocked()
 	a.mu.Unlock()
-	events.Emit("playback:state", a.playbackState)
+	events.Emit("playback:state", state)
 	return nil
 }
 
@@ -564,8 +567,9 @@ func (a *App) StopPlayback() error {
 	if err == nil {
 		a.mu.Lock()
 		a.playbackState.Status = "STOPPED"
-		events.Emit("playback:state", a.playbackState)
+		state := a.stateLocked()
 		a.mu.Unlock()
+		events.Emit("playback:state", state)
 	}
 	return err
 }
@@ -955,7 +959,10 @@ func (a *App) handleChromecastMessage(msg *cast_proto.CastMessage) {
 		a.playbackState.Status = "STOPPED"
 		a.mu.Unlock()
 	}
-	events.Emit("playback:state", a.playbackState)
+	a.mu.RLock()
+	state := a.stateLocked()
+	a.mu.RUnlock()
+	events.Emit("playback:state", state)
 }
 
 // extrapolatedPosition is the playback position now: the last reported one
@@ -976,8 +983,28 @@ func (a *App) extrapolatedPosition() float64 {
 func (a *App) currentPlaybackState() PlaybackState {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	state := a.playbackState
+	state := a.stateLocked()
 	state.CurrentTime = a.extrapolatedPosition()
+	return state
+}
+
+// stateLocked returns a copy of the playback state carrying the current
+// cast's selection. Callers must hold a.mu.
+func (a *App) stateLocked() PlaybackState {
+	state := a.playbackState
+	if o := a.streamOptions; o != nil {
+		state.Selection = &castapi.CastSelection{
+			VideoTrack:   o.VideoTrack,
+			AudioTrack:   o.AudioTrack,
+			Quality:      o.Bitrate,
+			SubtitlePath: o.Subtitle.Path,
+			FontSize:     o.Subtitle.FontSize,
+			Bold:         o.Subtitle.Bold,
+			Italic:       o.Subtitle.Italic,
+			DelaySeconds: o.Subtitle.DelaySeconds,
+			BurnIn:       o.Subtitle.BurnIn,
+		}
+	}
 	return state
 }
 

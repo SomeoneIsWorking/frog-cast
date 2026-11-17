@@ -42,6 +42,22 @@ type PlaybackState struct {
 	Duration    float64 `json:"duration"`
 	Volume      float64 `json:"volume"`
 	Muted       bool    `json:"muted"`
+	// Selection is what the current cast plays. Older instances omit it, and
+	// a client treats a missing selection as unknown.
+	Selection *CastSelection `json:"selection,omitempty"`
+}
+
+// CastSelection is the track, quality and subtitle choice of a running cast.
+type CastSelection struct {
+	VideoTrack   int     `json:"videoTrack"`
+	AudioTrack   int     `json:"audioTrack"`
+	Quality      string  `json:"quality"`
+	SubtitlePath string  `json:"subtitlePath"`
+	FontSize     int     `json:"fontSize"`
+	Bold         bool    `json:"bold"`
+	Italic       bool    `json:"italic"`
+	DelaySeconds float64 `json:"delaySeconds"`
+	BurnIn       bool    `json:"burnIn"`
 }
 
 type SubtitleDisplayItem struct {

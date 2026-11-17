@@ -10,6 +10,17 @@ export namespace castapi {
 	    port: number;
 	    url: string;
 	}
+	export interface CastSelection {
+	    videoTrack: number;
+	    audioTrack: number;
+	    quality: string;
+	    subtitlePath: string;
+	    fontSize: number;
+	    bold: boolean;
+	    italic: boolean;
+	    delaySeconds: number;
+	    burnIn: boolean;
+	}
 	export interface LibraryEpisode {
 	    path: string;
 	    name: string;
@@ -69,6 +80,7 @@ export namespace castapi {
 	    duration: number;
 	    volume: number;
 	    muted: boolean;
+	    selection?: CastSelection;
 	}
 	export interface RemoteDevice {
 	    name: string;
