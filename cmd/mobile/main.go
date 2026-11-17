@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -309,7 +310,7 @@ func (u *ui) showPlayDialog(item castapi.LibraryItem) {
 			subSel := widget.NewSelect(subOptions, func(string) {})
 			subSel.SetSelectedIndex(0)
 
-			qualityOptions := []string{"Default", "8M", "5M", "3M", "2M"}
+			qualityOptions := append([]string{"Default"}, qualityBitrates...)
 			qualitySel := widget.NewSelect(qualityOptions, func(string) {})
 			qualitySel.SetSelectedIndex(0)
 
@@ -755,6 +756,7 @@ func (u *ui) showNowPlaying() {
 	}
 
 	subtitle := widget.NewButton("Subtitle", func() { u.showSubtitleDialog() })
+	tracks := widget.NewButton("Tracks", func() { u.showTracksDialog() })
 	back := widget.NewButton("Back to library", func() {
 		u.stopNowPlayingPoll()
 		u.window.SetContent(u.tabs)
@@ -776,6 +778,7 @@ func (u *ui) showNowPlaying() {
 		widget.NewLabel("Volume"), vol,
 		mute,
 		subtitle,
+		tracks,
 	)
 	u.window.SetContent(content)
 
@@ -817,7 +820,7 @@ func (u *ui) showNowPlaying() {
 						seek.Refresh()
 					}
 					pos.SetText(fmt.Sprintf("%s / %s", fmtSec(st.CurrentTime), fmtSec(st.Duration)))
-					pauseState = st.Status == "paused"
+					pauseState = st.Status == "PAUSED"
 					if pauseState {
 						playPause.SetText("Resume")
 					} else {
@@ -892,6 +895,128 @@ func (u *ui) showSubtitleDialog() {
 		u.currentSubtitlePath = next.Path
 		go func() {
 			if err := u.client.UpdateSubtitle(next); err != nil {
+				fyne.Do(func() { u.fail(err) })
+			}
+		}()
+	}, u.window)
+}
+
+// qualityBitrates are the transcode bitrates offered besides "Original".
+var qualityBitrates = []string{"8M", "5M", "3M", "2M"}
+
+// showTracksDialog switches the running cast's video track, audio track,
+// quality or subtitle source. The TV reloads at the same position.
+func (u *ui) showTracksDialog() {
+	go func() {
+		st, err := u.client.State()
+		if err != nil {
+			fyne.Do(func() { u.fail(err) })
+			return
+		}
+		if st.Selection == nil || st.MediaPath == "" {
+			fyne.Do(func() {
+				dialog.ShowInformation("Tracks", "This instance doesn't report what it's playing.", u.window)
+			})
+			return
+		}
+		info, err := u.client.TrackInfo(st.MediaPath)
+		if err != nil {
+			fyne.Do(func() { u.fail(err) })
+			return
+		}
+		sel := *st.Selection
+		fyne.Do(func() { u.showTracksForm(sel, info) })
+	}()
+}
+
+func (u *ui) showTracksForm(sel castapi.CastSelection, info *castapi.TrackDisplayInfo) {
+	var videoLabels []string
+	videoIdx := -1
+	for i, v := range info.VideoTracks {
+		videoLabels = append(videoLabels, fmt.Sprintf("%d: %s", v.Index, v.Resolution))
+		if v.Index == sel.VideoTrack {
+			videoIdx = i
+		}
+	}
+	videoSel := widget.NewSelect(videoLabels, nil)
+	if videoIdx >= 0 {
+		videoSel.SetSelectedIndex(videoIdx)
+	}
+
+	var audioLabels []string
+	audioIdx := -1
+	for i, a := range info.AudioTracks {
+		audioLabels = append(audioLabels, fmt.Sprintf("%d: %s", a.Index, a.Language))
+		if a.Index == sel.AudioTrack {
+			audioIdx = i
+		}
+	}
+	audioSel := widget.NewSelect(audioLabels, nil)
+	if audioIdx >= 0 {
+		audioSel.SetSelectedIndex(audioIdx)
+	}
+
+	qualities := append([]string{""}, qualityBitrates...)
+	qualityLabels := append([]string{"Original"}, qualityBitrates...)
+	qualitySel := widget.NewSelect(qualityLabels, nil)
+	for i, q := range qualities {
+		if q == sel.Quality {
+			qualitySel.SetSelectedIndex(i)
+		}
+	}
+
+	// Subtitle sources on the casting instance: none, embedded tracks, and
+	// the external files it knows about.
+	var subPaths, subLabels []string
+	for _, s := range info.SubtitleTracks {
+		if s.Path != "external" {
+			subPaths = append(subPaths, s.Path)
+			subLabels = append(subLabels, s.Label)
+		}
+	}
+	for _, p := range []string{sel.SubtitlePath, "external:" + info.NearSubtitle} {
+		if !strings.HasPrefix(p, "external:") || p == "external:" || slices.Contains(subPaths, p) {
+			continue
+		}
+		subPaths = append(subPaths, p)
+		file := strings.TrimPrefix(p, "external:")
+		subLabels = append(subLabels, "External: "+file[strings.LastIndexAny(file, `/\`)+1:])
+	}
+	subSel := widget.NewSelect(subLabels, nil)
+	if i := slices.Index(subPaths, sel.SubtitlePath); i >= 0 {
+		subSel.SetSelectedIndex(i)
+	}
+
+	form := container.NewVBox(
+		widget.NewLabel("Video track"), videoSel,
+		widget.NewLabel("Quality"), qualitySel,
+	)
+	if len(audioLabels) > 0 {
+		form.Add(widget.NewLabel("Audio track"))
+		form.Add(audioSel)
+	}
+	form.Add(widget.NewLabel("Subtitle"))
+	form.Add(subSel)
+
+	dialog.ShowCustomConfirm("Tracks", "Apply", "Cancel", form, func(ok bool) {
+		if !ok {
+			return
+		}
+		var change castapi.TrackChange
+		if i := videoSel.SelectedIndex(); i >= 0 && info.VideoTracks[i].Index != sel.VideoTrack {
+			change.VideoTrack = &info.VideoTracks[i].Index
+		}
+		if i := audioSel.SelectedIndex(); i >= 0 && info.AudioTracks[i].Index != sel.AudioTrack {
+			change.AudioTrack = &info.AudioTracks[i].Index
+		}
+		if i := qualitySel.SelectedIndex(); i >= 0 && qualities[i] != sel.Quality {
+			change.Quality = &qualities[i]
+		}
+		if i := subSel.SelectedIndex(); i >= 0 && subPaths[i] != sel.SubtitlePath {
+			change.SubtitlePath = &subPaths[i]
+		}
+		go func() {
+			if _, err := u.client.ChangeTracks(change); err != nil {
 				fyne.Do(func() { u.fail(err) })
 			}
 		}()

@@ -62,6 +62,9 @@
 
           <!-- Subtitle controls (size, sync offset, style) -->
           <SubtitlePopover />
+
+          <!-- Video/audio track, quality and subtitle source -->
+          <TracksPopover />
         </div>
 
         <!-- Center group: transport controls -->
@@ -102,6 +105,7 @@ import { ref, onMounted, onUnmounted, computed } from "vue";
 import { mediaService } from "../services/media";
 import VolumePopover from "./VolumePopover.vue";
 import SubtitlePopover from "./SubtitlePopover.vue";
+import TracksPopover from "./TracksPopover.vue";
 import {
   Video,
   Pause,

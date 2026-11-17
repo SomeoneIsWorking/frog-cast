@@ -328,6 +328,14 @@ export const useCastStore = defineStore("cast", () => {
     }
   };
 
+  // changeTracks switches what the running cast plays, on whichever instance
+  // is casting. The TV reloads at the current position.
+  const changeTracks = async (change: castapi.TrackChange) => {
+    const state = await mediaService.changeTracks(change);
+    if (isRemoteActive()) lastRemotePosition = state.currentTime;
+    playbackState.value = state;
+  };
+
   const checkFFmpeg = async () => {
     const { GetFFmpegInfo } = await import("../../wailsjs/go/main/App");
     ffmpegInfo.value = await GetFFmpegInfo(true);
@@ -423,6 +431,7 @@ export const useCastStore = defineStore("cast", () => {
     startCasting,
     checkFFmpeg,
     updateLiveSubtitleSettings,
+    changeTracks,
     getSubtitleDelay,
   };
 });

@@ -7,7 +7,7 @@ quality, and the subtitle source. Local and remote go through the same UI and
 the same backend calls, with the only difference being which instance receives
 them.
 
-Status: Phases 0–3 done (2026-11-17); Phases 4–6 not started.
+Status: Phases 0–4 done (2026-11-17); Phases 5–6 not started.
 
 ## Where things stand
 
@@ -108,6 +108,12 @@ What doesn't:
 - The same popover serves local casts, so the local app also gains mid-playback
   track switching.
 - The mobile app (`cmd/mobile`) gets the same controls through `castapi`.
+- As built: `TracksPopover.vue` applies each pick at once through
+  `castStore.changeTracks`. The pickers stay disabled while the instance
+  reports no `selection` or the tracks are loading. External subtitles offer
+  only the files the casting instance knows about (the current one and the
+  one beside the media), since a file picked on the controller doesn't exist
+  over there. The mobile app has a Tracks dialog on its Now Playing screen.
 
 ## Phase 5: who owns subtitle preferences
 
