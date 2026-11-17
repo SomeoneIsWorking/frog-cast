@@ -64,9 +64,6 @@ type Settings struct {
 	DefaultQuality   string `json:"defaultQuality"`
 	SubtitleFontSize int    `json:"subtitleFontSize"`
 
-	// SubtitleDelaySeconds shifts subtitle timing for the current playback.
-	// Positive = subtitles appear later, negative = earlier.
-	SubtitleDelaySeconds float64 `json:"subtitleDelaySeconds"`
 	// SubtitleBold / SubtitleItalic style rendered subtitles.
 	SubtitleBold   bool `json:"subtitleBold"`
 	SubtitleItalic bool `json:"subtitleItalic"`

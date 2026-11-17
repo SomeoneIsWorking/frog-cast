@@ -302,6 +302,15 @@ export const useCastStore = defineStore("cast", () => {
           audioTrack: castOptions.value.AudioTrack,
           subtitlePath,
           quality: castOptions.value.Bitrate,
+          // This controller's subtitle look is the default for casts it starts.
+          subtitle: settingsStore.settings
+            ? {
+                fontSize: settingsStore.settings.subtitleFontSize,
+                bold: settingsStore.settings.subtitleBold,
+                italic: settingsStore.settings.subtitleItalic,
+                burnIn: settingsStore.settings.subtitleBurnIn,
+              }
+            : undefined,
         }
       );
       startStatePoll();
@@ -320,12 +329,6 @@ export const useCastStore = defineStore("cast", () => {
         backendOptions
       );
     }
-
-    // Re-apply this episode's saved subtitle timing offset, if any.
-    const savedDelay = getSubtitleDelay(media);
-    if (savedDelay !== 0) {
-      await updateLiveSubtitleSettings({ delaySeconds: savedDelay });
-    }
   };
 
   // changeTracks switches what the running cast plays, on whichever instance
@@ -341,25 +344,11 @@ export const useCastStore = defineStore("cast", () => {
     ffmpegInfo.value = await GetFFmpegInfo(true);
   };
 
-  // Subtitle timing offset is remembered PER EPISODE (keyed by the media path)
-  // because the right sync differs per file; size and style stay global.
-  const SUB_DELAY_PREFIX = "subDelay:";
-  const getSubtitleDelay = (mediaPath: string): number => {
-    if (!mediaPath) return 0;
-    const raw = localStorage.getItem(SUB_DELAY_PREFIX + mediaPath);
-    const v = raw ? parseFloat(raw) : 0;
-    return Number.isFinite(v) ? v : 0;
-  };
-  const setSubtitleDelay = (mediaPath: string, delay: number) => {
-    if (!mediaPath) return;
-    const key = SUB_DELAY_PREFIX + mediaPath;
-    if (delay === 0) localStorage.removeItem(key);
-    else localStorage.setItem(key, String(delay));
-  };
-
   // updateLiveSubtitleSettings applies subtitle tweaks (timing offset, bold,
-  // italic, font size) to the running playback without recasting. Size/style
-  // overrides persist to global settings; the timing offset persists per episode.
+  // italic, font size) to the running cast without recasting. The casting
+  // instance owns the running cast's subtitles and keeps the timing offset
+  // per episode; size and style also become this controller's defaults for
+  // casts it starts.
   const updateLiveSubtitleSettings = async (overrides: {
     delaySeconds?: number;
     bold?: boolean;
@@ -367,9 +356,8 @@ export const useCastStore = defineStore("cast", () => {
     fontSize?: number;
   }) => {
     const settings = settingsStore.settings;
-    const mediaPath = playbackState.value.mediaPath;
+    const current = playingSelection.value;
 
-    // Persist size/style globally so they stick across casts.
     if (settings && (overrides.bold !== undefined || overrides.italic !== undefined || overrides.fontSize !== undefined)) {
       const next: main.Settings = { ...settings };
       if (overrides.bold !== undefined) next.subtitleBold = overrides.bold;
@@ -378,24 +366,37 @@ export const useCastStore = defineStore("cast", () => {
         next.subtitleFontSize = overrides.fontSize;
       await settingsStore.saveSettings(next);
     }
-    // Persist the timing offset per episode.
-    if (overrides.delaySeconds !== undefined) {
-      setSubtitleDelay(mediaPath, overrides.delaySeconds);
-    }
 
-    // An empty Path keeps the casting instance's current subtitle source:
-    // restyling never changes which subtitles are shown.
+    // Start from what the cast has now (this controller's settings only when
+    // the instance doesn't report it). An empty Path keeps the subtitle
+    // source: restyling never changes which subtitles are shown.
     const opts: options.SubtitleCastOptions = {
       Path: "",
-      BurnIn: settings?.subtitleBurnIn ?? false,
-      FontSize: overrides.fontSize ?? settings?.subtitleFontSize ?? 24,
-      IgnoreClosedCaptions: settings?.ignoreClosedCaptions ?? false,
-      DelaySeconds: overrides.delaySeconds ?? getSubtitleDelay(mediaPath),
-      Bold: overrides.bold ?? settings?.subtitleBold ?? false,
-      Italic: overrides.italic ?? settings?.subtitleItalic ?? false,
+      BurnIn: current?.burnIn ?? settings?.subtitleBurnIn ?? false,
+      FontSize:
+        overrides.fontSize ?? current?.fontSize ?? settings?.subtitleFontSize ?? 24,
+      IgnoreClosedCaptions:
+        current?.ignoreClosedCaptions ?? settings?.ignoreClosedCaptions ?? false,
+      DelaySeconds: overrides.delaySeconds ?? current?.delaySeconds ?? 0,
+      Bold: overrides.bold ?? current?.bold ?? settings?.subtitleBold ?? false,
+      Italic: overrides.italic ?? current?.italic ?? settings?.subtitleItalic ?? false,
     };
 
     await mediaService.updateSubtitleSettings(opts);
+    // A remote's next poll is up to 2s away; show the change now so the next
+    // tweak builds on it.
+    if (current) {
+      playbackState.value = {
+        ...playbackState.value,
+        selection: {
+          ...current,
+          fontSize: opts.FontSize,
+          delaySeconds: opts.DelaySeconds,
+          bold: opts.Bold,
+          italic: opts.Italic,
+        },
+      };
+    }
   };
 
   return {
@@ -432,6 +433,5 @@ export const useCastStore = defineStore("cast", () => {
     checkFFmpeg,
     updateLiveSubtitleSettings,
     changeTracks,
-    getSubtitleDelay,
   };
 });

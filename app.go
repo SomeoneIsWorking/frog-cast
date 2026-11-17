@@ -198,9 +198,19 @@ func (a *App) GetTrackDisplayInfo(fileNameOrUrl string) (*TrackDisplayInfo, erro
 	}, nil
 }
 
-// CastToDevice casts media (local file or remote URL) to a device
+// CastToDevice casts media (local file or remote URL) to a device, with this
+// instance's subtitle style.
 func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *options.CastOptions) (*PlaybackState, error) {
-	state, err := a.startCast(deviceIp, fileNameOrUrl, a.streamOptionsFor(castOptions), 0, false)
+	return a.castWithStyle(deviceIp, fileNameOrUrl, castOptions, nil)
+}
+
+// castWithStyle casts with the subtitle style of the controller that started
+// the cast; nil uses this instance's settings. The timing offset is always
+// the one this instance keeps for the media.
+func (a *App) castWithStyle(deviceIp, fileNameOrUrl string, castOptions *options.CastOptions, style *castapi.SubtitleStyle) (*PlaybackState, error) {
+	opts := a.streamOptionsFor(castOptions, style)
+	opts.Subtitle.DelaySeconds = a.historyStore.SubtitleDelay(fileNameOrUrl)
+	state, err := a.startCast(deviceIp, fileNameOrUrl, opts, 0, false)
 	if err != nil {
 		return nil, err
 	}
@@ -208,19 +218,26 @@ func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *o
 	return state, nil
 }
 
-// streamOptionsFor combines a cast's track choice with this instance's
-// subtitle and transcode settings.
-func (a *App) streamOptionsFor(castOptions *options.CastOptions) options.StreamOptions {
+// streamOptionsFor combines a cast's track choice and subtitle style with
+// this instance's transcode settings. A nil style uses this instance's.
+func (a *App) streamOptionsFor(castOptions *options.CastOptions, style *castapi.SubtitleStyle) options.StreamOptions {
 	settings := a.GetSettings()
+	if style == nil {
+		style = &castapi.SubtitleStyle{
+			FontSize: settings.SubtitleFontSize,
+			Bold:     settings.SubtitleBold,
+			Italic:   settings.SubtitleItalic,
+			BurnIn:   settings.SubtitleBurnIn,
+		}
+	}
 	return options.StreamOptions{
 		Subtitle: options.SubtitleCastOptions{
 			Path:                 castOptions.SubtitlePath,
-			BurnIn:               settings.SubtitleBurnIn,
-			FontSize:             settings.SubtitleFontSize,
+			BurnIn:               style.BurnIn,
+			FontSize:             style.FontSize,
 			IgnoreClosedCaptions: settings.IgnoreClosedCaptions,
-			DelaySeconds:         settings.SubtitleDelaySeconds,
-			Bold:                 settings.SubtitleBold,
-			Italic:               settings.SubtitleItalic,
+			Bold:                 style.Bold,
+			Italic:               style.Italic,
 		},
 		VideoTrack:       castOptions.VideoTrack,
 		AudioTrack:       castOptions.AudioTrack,
@@ -478,11 +495,16 @@ func (a *App) SeekTo(seekTime float64) error {
 // subtitles it also re-sends the VTT URL so the receiver swaps in the freshly
 // shifted/styled subtitle track.
 //
-// An empty Path keeps the current cast's subtitle source.
+// An empty Path keeps the current cast's subtitle source. The timing offset
+// is remembered for the media, for every later cast of it.
 func (a *App) UpdateSubtitleSettings(opts options.SubtitleCastOptions) error {
 	a.mu.Lock()
-	if opts.Path == "" && a.streamOptions != nil {
-		opts.Path = a.streamOptions.Subtitle.Path
+	var previous options.SubtitleCastOptions
+	if a.streamOptions != nil {
+		previous = a.streamOptions.Subtitle
+	}
+	if opts.Path == "" {
+		opts.Path = previous.Path
 	}
 	if opts.Path == "" {
 		opts.Path = "none"
@@ -490,7 +512,14 @@ func (a *App) UpdateSubtitleSettings(opts options.SubtitleCastOptions) error {
 	if a.streamOptions != nil {
 		a.streamOptions.Subtitle = opts
 	}
+	mediaPath := a.playbackState.MediaPath
 	a.mu.Unlock()
+
+	if mediaPath != "" && opts.DelaySeconds != previous.DelaySeconds {
+		if err := a.historyStore.SetSubtitleDelay(mediaPath, opts.DelaySeconds); err != nil {
+			logger.Warn("Failed to save subtitle offset", "media", mediaPath, "error", err)
+		}
+	}
 
 	// Update subtitle path + full options on the live handler (clears cache).
 	a.mediaServer.SetSubtitlePath(opts.Path)
@@ -505,6 +534,9 @@ func (a *App) UpdateSubtitleSettings(opts options.SubtitleCastOptions) error {
 	// For external subtitles, re-send the VTT so the player reloads it with the
 	// new timing offset / style applied. The receiver auto-replaces the track.
 	if opts.Path != "none" && !opts.BurnIn {
+		if opts.FontSize != previous.FontSize {
+			a.setSubtitleSize(opts.FontSize)
+		}
 		a.sendSubtitles(fmt.Sprintf("http://%s:%d/subtitles.vtt", a.localIp, a.port))
 	}
 
@@ -1093,6 +1125,8 @@ func (a *App) stateLocked() PlaybackState {
 			Italic:       o.Subtitle.Italic,
 			DelaySeconds: o.Subtitle.DelaySeconds,
 			BurnIn:       o.Subtitle.BurnIn,
+
+			IgnoreClosedCaptions: o.Subtitle.IgnoreClosedCaptions,
 		}
 	}
 	return state

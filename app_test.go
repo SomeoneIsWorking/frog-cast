@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -115,8 +117,9 @@ func TestUpdateSubtitleSettingsEmptyPathKeepsSource(t *testing.T) {
 	if got := a.streamOptions.Subtitle.FontSize; got != 30 {
 		t.Fatalf("font size = %d, want 30", got)
 	}
-	if len(fake.custom) != 1 || fake.custom[0] != "subtitles" {
-		t.Fatalf("external subtitles not re-sent: %v", fake.custom)
+	// The size changed, so the receiver is told at once, then the VTT is re-sent.
+	if !slices.Equal(fake.custom, []string{"subtitleSize", "subtitles"}) {
+		t.Fatalf("receiver messages = %v", fake.custom)
 	}
 }
 
@@ -371,4 +374,42 @@ func TestDeviceReportsDuringReload(t *testing.T) {
 
 func castMessage(payload string) *cast_proto.CastMessage {
 	return &cast_proto.CastMessage{PayloadUtf8: &payload}
+}
+
+// The casting instance keeps each media's subtitle offset and applies it on
+// every later cast, whichever controller starts it.
+func TestSubtitleOffsetIsKeptPerMediaByTheCastingInstance(t *testing.T) {
+	a, fake := newTestApp(t)
+	media := "/media/offset-film.mkv"
+	if _, err := a.CastToDevice("192.168.1.50", media, &options.CastOptions{SubtitlePath: "none"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.UpdateSubtitleSettings(options.SubtitleCastOptions{DelaySeconds: 2.5}); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.historyStore.SubtitleDelay(media); got != 2.5 {
+		t.Fatalf("kept offset = %v, want 2.5", got)
+	}
+
+	// A remote controller starts the same media again with its own style.
+	srv := NewHTTPServer(a)
+	body := `{"id":"` + media + `","deviceIp":"192.168.1.50","subtitle":{"fontSize":60,"bold":true}}`
+	rec := httptest.NewRecorder()
+	srv.handlePlay(rec, httptest.NewRequest(http.MethodPost, "/play", strings.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("play: %d %s", rec.Code, rec.Body)
+	}
+	if len(fake.loads) != 2 {
+		t.Fatalf("loads = %d", len(fake.loads))
+	}
+	sel := a.currentPlaybackState().Selection
+	if sel.DelaySeconds != 2.5 {
+		t.Fatalf("offset on recast = %v, want 2.5", sel.DelaySeconds)
+	}
+	if sel.FontSize != 60 || !sel.Bold {
+		t.Fatalf("controller style not used: %+v", sel)
+	}
+	if got := a.historyStore.SubtitleDelay(media); got != 2.5 {
+		t.Fatalf("re-adding to history dropped the offset: %v", got)
+	}
 }

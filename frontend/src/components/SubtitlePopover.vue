@@ -101,28 +101,28 @@ import { ref, onMounted, onUnmounted, watch } from "vue";
 import { Captions, Minus, Plus, Bold, Italic } from "lucide-vue-next";
 import { useCastStore } from "@/stores/cast";
 import { useSettingsStore } from "@/stores/settings";
-import { SetSubtitleSize } from "../../wailsjs/go/main/App";
 
 const castStore = useCastStore();
 const settingsStore = useSettingsStore();
 const showPopover = ref(false);
 const containerRef = ref<HTMLElement | null>(null);
 
-// Size and style are global (from saved settings); the timing offset is
-// per-episode, seeded from the currently-playing media path.
-const subtitleSize = ref(settingsStore.settings?.subtitleFontSize ?? 24);
-const subtitleDelay = ref(
-  castStore.getSubtitleDelay(castStore.playbackState.mediaPath)
-);
-const subtitleBold = ref(settingsStore.settings?.subtitleBold ?? false);
-const subtitleItalic = ref(settingsStore.settings?.subtitleItalic ?? false);
-
-// Re-seed the offset whenever the playing episode changes.
+// The controls show what the running cast has, as the casting instance
+// reports it; this controller's settings fill in when it doesn't.
+const subtitleSize = ref(24);
+const subtitleDelay = ref(0);
+const subtitleBold = ref(false);
+const subtitleItalic = ref(false);
 watch(
-  () => castStore.playbackState.mediaPath,
-  (path) => {
-    subtitleDelay.value = castStore.getSubtitleDelay(path);
-  }
+  () => castStore.playingSelection,
+  (selection) => {
+    const settings = settingsStore.settings;
+    subtitleSize.value = selection?.fontSize ?? settings?.subtitleFontSize ?? 24;
+    subtitleDelay.value = selection?.delaySeconds ?? 0;
+    subtitleBold.value = selection?.bold ?? settings?.subtitleBold ?? false;
+    subtitleItalic.value = selection?.italic ?? settings?.subtitleItalic ?? false;
+  },
+  { immediate: true }
 );
 
 const togglePopover = () => {
@@ -132,9 +132,6 @@ const togglePopover = () => {
 const applySize = async (next: number) => {
   if (next === subtitleSize.value) return;
   subtitleSize.value = next;
-  // SetSubtitleSize is the receiver's instant size message (no transcode);
-  // updateLiveSubtitleSettings persists it and covers the burn-in path.
-  await SetSubtitleSize(next);
   await castStore.updateLiveSubtitleSettings({ fontSize: next });
 };
 

@@ -20,6 +20,7 @@ export namespace castapi {
 	    italic: boolean;
 	    delaySeconds: number;
 	    burnIn: boolean;
+	    ignoreClosedCaptions: boolean;
 	}
 	export interface LibraryEpisode {
 	    path: string;
@@ -64,11 +65,18 @@ export namespace castapi {
 	    dstSubDir: string;
 	    description: string;
 	}
+	export interface SubtitleStyle {
+	    fontSize: number;
+	    bold: boolean;
+	    italic: boolean;
+	    burnIn: boolean;
+	}
 	export interface PlayOptions {
 	    videoTrack: number;
 	    audioTrack: number;
 	    subtitlePath: string;
 	    quality?: string;
+	    subtitle?: SubtitleStyle;
 	}
 	export interface PlaybackState {
 	    status: string;
@@ -101,6 +109,7 @@ export namespace castapi {
 	    Path: string;
 	    Label: string;
 	}
+	
 	export interface TorrentStatus {
 	    hash: string;
 	    name: string;
@@ -176,6 +185,7 @@ export namespace main {
 	    name: string;
 	    timestamp: string;
 	    castOptions?: options.CastOptions;
+	    subtitleDelaySeconds?: number;
 	}
 	export interface Settings {
 	    subtitleBurnIn: boolean;
@@ -187,7 +197,6 @@ export namespace main {
 	    llmBaseURL: string;
 	    defaultQuality: string;
 	    subtitleFontSize: number;
-	    subtitleDelaySeconds: number;
 	    subtitleBold: boolean;
 	    subtitleItalic: boolean;
 	    maxOutputWidth: number;

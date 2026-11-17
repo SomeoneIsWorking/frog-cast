@@ -12,8 +12,8 @@ func (a *App) sendSubtitles(url string) error {
 	return a.App.SendCustom(namespace, "subtitles", url)
 }
 
-// SetSubtitleSize instructs the receiver to change subtitle size
-func (a *App) SetSubtitleSize(size int) error {
+// setSubtitleSize tells the receiver to resize external subtitles at once.
+func (a *App) setSubtitleSize(size int) error {
 	if a.App == nil {
 		return fmt.Errorf("no chromecast application available")
 	}

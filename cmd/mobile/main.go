@@ -839,14 +839,34 @@ func (u *ui) showNowPlaying() {
 
 }
 
+// showSubtitleDialog edits the running cast's subtitle style, seeded from
+// what the casting instance reports.
 func (u *ui) showSubtitleDialog() {
-	opts := u.currentSubtitleOpts
-	if opts.Path == "" {
-		opts.Path = u.currentSubtitlePath
-	}
-	if opts.FontSize == 0 {
-		opts.FontSize = 24
-	}
+	go func() {
+		opts := u.currentSubtitleOpts
+		if opts.Path == "" {
+			opts.Path = u.currentSubtitlePath
+		}
+		if st, err := u.client.State(); err == nil && st.Selection != nil {
+			sel := st.Selection
+			opts = options.SubtitleCastOptions{
+				Path:                 sel.SubtitlePath,
+				BurnIn:               sel.BurnIn,
+				FontSize:             sel.FontSize,
+				IgnoreClosedCaptions: sel.IgnoreClosedCaptions,
+				DelaySeconds:         sel.DelaySeconds,
+				Bold:                 sel.Bold,
+				Italic:               sel.Italic,
+			}
+		}
+		if opts.FontSize == 0 {
+			opts.FontSize = 24
+		}
+		fyne.Do(func() { u.showSubtitleForm(opts) })
+	}()
+}
+
+func (u *ui) showSubtitleForm(opts options.SubtitleCastOptions) {
 
 	delay := widget.NewSlider(-30, 30)
 	delay.Step = 0.5

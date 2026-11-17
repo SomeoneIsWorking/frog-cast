@@ -7,7 +7,7 @@ quality, and the subtitle source. Local and remote go through the same UI and
 the same backend calls, with the only difference being which instance receives
 them.
 
-Status: Phases 0–4 done (2026-11-17); Phases 5–6 not started.
+Status: Phases 0–5 done (2026-11-17); Phase 6 not started.
 
 ## Where things stand
 
@@ -125,6 +125,17 @@ Decision: **the casting instance owns everything about a running cast.** It
 stores the per-episode timing offset with its history entry and applies it on
 every cast, whichever device started it. A controller's own settings only
 provide defaults for casts that controller starts.
+
+As built: the offset lives in `HistoryItem.SubtitleDelaySeconds` on the
+casting instance. `UpdateSubtitleSettings` saves it and `castWithStyle`
+applies it, and the unused global `Settings.SubtitleDelaySeconds` is gone.
+Offsets saved in a controller's `localStorage` before this aren't carried
+over. `/play` and `/play-url` take the starting controller's style
+(`PlayOptions.Subtitle`: size, bold, italic, burn-in); without it the casting
+instance uses its own settings. The subtitle popover and the mobile dialog
+show the running cast's values from `state.selection`. A size change from
+any controller now reaches the receiver through the casting instance, which
+sends the receiver's `subtitleSize` message itself.
 
 ## Phase 6: send a web page to another instance
 

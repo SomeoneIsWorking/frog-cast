@@ -85,28 +85,18 @@ type libraryResponse struct {
 	Items []LibraryItem `json:"items"`
 }
 
-// playOptions carries the optional track/subtitle/quality selection shared by
-// POST /play and POST /play-url. All fields are optional; omitted fields fall
-// back to sensible defaults (track 0, no subtitle, default quality setting).
-type playOptions struct {
-	VideoTrack   int     `json:"videoTrack"`
-	AudioTrack   int     `json:"audioTrack"`
-	SubtitlePath string  `json:"subtitlePath"` // "" or "none" = no subtitle
-	Quality      *string `json:"quality"`      // nil = default setting; "" = Original
-}
-
 // playRequest is the body for POST /play.
 type playRequest struct {
 	ID       string `json:"id"`       // library item id (== path)
 	DeviceIP string `json:"deviceIp"` // target device; "local" for desktop-only
-	playOptions
+	castapi.PlayOptions
 }
 
 // playURLRequest is the body for POST /play-url.
 type playURLRequest struct {
 	URL      string `json:"url"`
 	DeviceIP string `json:"deviceIp"` // target device; "local" for desktop-only
-	playOptions
+	castapi.PlayOptions
 }
 
 // playResponse is returned after a successful play command.
@@ -463,7 +453,7 @@ func (h *HTTPServer) handlePlay(w http.ResponseWriter, r *http.Request) {
 		deviceIP = "local"
 	}
 
-	state, err := h.app.CastToDevice(deviceIP, req.ID, h.castOptions(req.playOptions))
+	state, err := h.app.castWithStyle(deviceIP, req.ID, h.castOptions(req.PlayOptions), req.Subtitle)
 	if err != nil {
 		logger.Error("Remote API: play failed", "id", req.ID, "error", err)
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
@@ -472,9 +462,9 @@ func (h *HTTPServer) handlePlay(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, playResponse{OK: true, State: *state})
 }
 
-// castOptions converts the optional remote playOptions into options.CastOptions,
+// castOptions converts the optional remote PlayOptions into options.CastOptions,
 // applying defaults for any field the client left unset.
-func (h *HTTPServer) castOptions(p playOptions) *options.CastOptions {
+func (h *HTTPServer) castOptions(p castapi.PlayOptions) *options.CastOptions {
 	subtitle := p.SubtitlePath
 	if subtitle == "" {
 		subtitle = "none"
@@ -512,7 +502,7 @@ func (h *HTTPServer) handlePlayURL(w http.ResponseWriter, r *http.Request) {
 		deviceIP = "local"
 	}
 
-	state, err := h.app.CastToDevice(deviceIP, req.URL, h.castOptions(req.playOptions))
+	state, err := h.app.castWithStyle(deviceIP, req.URL, h.castOptions(req.PlayOptions), req.Subtitle)
 	if err != nil {
 		logger.Error("Remote API: play-url failed", "url", req.URL, "error", err)
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})

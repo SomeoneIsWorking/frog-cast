@@ -132,6 +132,7 @@ func (c *Client) Play(id, deviceIp string, opts PlayOptions) (*PlaybackState, er
 		"audioTrack":   opts.AudioTrack,
 		"subtitlePath": opts.SubtitlePath,
 		"quality":      opts.Quality,
+		"subtitle":     opts.Subtitle,
 	}
 	var resp PlayResponse
 	if err := c.do(http.MethodPost, "/play", body, &resp); err != nil {

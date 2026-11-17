@@ -16,13 +16,24 @@ type RemoteDevice struct {
 	UUID string `json:"uuid"`
 }
 
-// PlayOptions mirrors the optional track/subtitle/quality selection accepted
-// by the remote /play and /play-url endpoints.
+// PlayOptions is the optional track/subtitle/quality selection accepted by
+// the remote /play and /play-url endpoints.
 type PlayOptions struct {
 	VideoTrack   int     `json:"videoTrack"`
 	AudioTrack   int     `json:"audioTrack"`
-	SubtitlePath string  `json:"subtitlePath"`
-	Quality      *string `json:"quality"`
+	SubtitlePath string  `json:"subtitlePath"` // "" or "none" = no subtitle
+	Quality      *string `json:"quality"`      // nil = the instance's default; "" = Original
+	// Subtitle is the starting controller's subtitle style; nil uses the
+	// casting instance's settings.
+	Subtitle *SubtitleStyle `json:"subtitle,omitempty"`
+}
+
+// SubtitleStyle is a controller's default subtitle look for casts it starts.
+type SubtitleStyle struct {
+	FontSize int  `json:"fontSize"`
+	Bold     bool `json:"bold"`
+	Italic   bool `json:"italic"`
+	BurnIn   bool `json:"burnIn"`
 }
 
 type LibraryItem struct {
@@ -67,6 +78,8 @@ type CastSelection struct {
 	Italic       bool    `json:"italic"`
 	DelaySeconds float64 `json:"delaySeconds"`
 	BurnIn       bool    `json:"burnIn"`
+	// IgnoreClosedCaptions drops closed-caption cues from the subtitles.
+	IgnoreClosedCaptions bool `json:"ignoreClosedCaptions"`
 }
 
 type SubtitleDisplayItem struct {

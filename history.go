@@ -22,6 +22,9 @@ type HistoryItem struct {
 	Name          string               `json:"name"`
 	Timestamp     string               `json:"timestamp"`
 	CastOptions   *options.CastOptions `json:"castOptions"`
+	// SubtitleDelaySeconds is this media's subtitle timing offset, applied on
+	// every cast of it from this instance.
+	SubtitleDelaySeconds float64 `json:"subtitleDelaySeconds,omitempty"`
 }
 
 type HistoryStore struct {
@@ -80,11 +83,13 @@ func (h *HistoryStore) Add(fileNameOrUrl string, name string, castOptions *optio
 		CastOptions:   castOptions,
 	}
 
-	// Remove duplicate if exists
+	// Remove duplicate if exists, keeping its subtitle offset.
 	filtered := []HistoryItem{}
 	for _, existing := range h.items {
 		if existing.FileNameOrUrl != fileNameOrUrl {
 			filtered = append(filtered, existing)
+		} else {
+			item.SubtitleDelaySeconds = existing.SubtitleDelaySeconds
 		}
 	}
 
@@ -101,6 +106,32 @@ func (h *HistoryStore) Add(fileNameOrUrl string, name string, castOptions *optio
 		events.Emit("history:updated", item)
 	}
 	return err
+}
+
+// SubtitleDelay returns the subtitle timing offset kept for the media, or 0.
+func (h *HistoryStore) SubtitleDelay(fileNameOrUrl string) float64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, item := range h.items {
+		if item.FileNameOrUrl == fileNameOrUrl {
+			return item.SubtitleDelaySeconds
+		}
+	}
+	return 0
+}
+
+// SetSubtitleDelay keeps the subtitle timing offset for media in history.
+// Media without a history entry (it is added when cast) is skipped.
+func (h *HistoryStore) SetSubtitleDelay(fileNameOrUrl string, delay float64) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for i := range h.items {
+		if h.items[i].FileNameOrUrl == fileNameOrUrl {
+			h.items[i].SubtitleDelaySeconds = delay
+			return h.save()
+		}
+	}
+	return nil
 }
 
 func (h *HistoryStore) GetAll() []HistoryItem {
