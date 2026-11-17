@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/vishen/go-chromecast/application"
+	cast_proto "github.com/vishen/go-chromecast/cast/proto"
 
+	"wails-cast/pkg/castapi"
 	"wails-cast/pkg/folders"
 	"wails-cast/pkg/options"
 	"wails-cast/pkg/remote"
@@ -238,4 +240,135 @@ func TestTrackInfoForWebURLUsesCachedExtraction(t *testing.T) {
 	if len(second.AudioTracks) != 2 {
 		t.Fatalf("second lookup tracks = %+v", second)
 	}
+}
+
+func intp(v int) *int       { return &v }
+func strp(v string) *string { return &v }
+
+// playingApp is a test app casting /media/film.mkv to a device, reported at
+// position seconds as of ago.
+func playingApp(t *testing.T, status string, position float64, ago time.Duration, opts options.StreamOptions) (*App, *fakeReceiver) {
+	t.Helper()
+	a, fake := newTestApp(t)
+	a.playbackState = PlaybackState{
+		Status:      status,
+		MediaPath:   "/media/film.mkv",
+		MediaName:   "film.mkv",
+		DeviceURL:   "192.168.1.50",
+		CurrentTime: position,
+		Duration:    7200,
+	}
+	a.positionAt = time.Now().Add(-ago)
+	a.streamOptions = &opts
+	return a, fake
+}
+
+func TestChangeTracksRecastsAtCurrentPosition(t *testing.T) {
+	a, fake := playingApp(t, "PLAYING", 100, 30*time.Second, options.StreamOptions{
+		Subtitle: options.SubtitleCastOptions{Path: "none"},
+	})
+
+	state, err := a.ChangeTracks(castapi.TrackChange{AudioTrack: intp(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.loads) != 1 {
+		t.Fatalf("loads = %d, want 1", len(fake.loads))
+	}
+	load := fake.loads[0]
+	if load.StartTime < 129 || load.StartTime > 131 {
+		t.Fatalf("StartTime = %d, want about 130", load.StartTime)
+	}
+	if load.Paused {
+		t.Fatal("a playing cast was reloaded paused")
+	}
+	if state.Selection == nil || state.Selection.AudioTrack != 1 {
+		t.Fatalf("selection = %+v", state.Selection)
+	}
+	if state.Status != "LOADING" {
+		t.Fatalf("status = %s, want LOADING until the device reports", state.Status)
+	}
+	if got := a.historyStore.GetAll()[0].CastOptions.AudioTrack; got != 1 {
+		t.Fatalf("history audio track = %d", got)
+	}
+}
+
+func TestChangeTracksKeepsPausedCastPaused(t *testing.T) {
+	a, fake := playingApp(t, "PAUSED", 200, time.Minute, options.StreamOptions{
+		Bitrate:  "5M",
+		Subtitle: options.SubtitleCastOptions{Path: "none"},
+	})
+
+	if _, err := a.ChangeTracks(castapi.TrackChange{Quality: strp("2M")}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.loads) != 1 {
+		t.Fatalf("loads = %d", len(fake.loads))
+	}
+	if fake.loads[0].StartTime != 200 || !fake.loads[0].Paused {
+		t.Fatalf("load = %+v, want paused at 200", fake.loads[0])
+	}
+}
+
+func TestChangeTracksExternalSubtitleIsLive(t *testing.T) {
+	a, fake := playingApp(t, "PLAYING", 50, 0, options.StreamOptions{
+		Subtitle: options.SubtitleCastOptions{Path: "none"},
+	})
+
+	state, err := a.ChangeTracks(castapi.TrackChange{SubtitlePath: strp("external:/media/film.srt")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.loads) != 0 {
+		t.Fatal("an external subtitle change re-cast the media")
+	}
+	if len(fake.custom) != 1 {
+		t.Fatalf("subtitles not sent: %v", fake.custom)
+	}
+	if state.Selection.SubtitlePath != "external:/media/film.srt" {
+		t.Fatalf("selection = %+v", state.Selection)
+	}
+}
+
+func TestChangeTracksBurnInSubtitleRecasts(t *testing.T) {
+	a, fake := playingApp(t, "PLAYING", 50, 0, options.StreamOptions{
+		Subtitle: options.SubtitleCastOptions{Path: "none", BurnIn: true},
+	})
+
+	if _, err := a.ChangeTracks(castapi.TrackChange{SubtitlePath: strp("embedded:2")}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.loads) != 1 {
+		t.Fatalf("loads = %d, want a re-cast for burn-in", len(fake.loads))
+	}
+}
+
+func TestChangeTracksNeedsACast(t *testing.T) {
+	a, _ := newTestApp(t)
+	if _, err := a.ChangeTracks(castapi.TrackChange{AudioTrack: intp(1)}); err == nil {
+		t.Fatal("expected an error with nothing playing")
+	}
+}
+
+// A replaced connection's IDLE report must not stop the cast that replaced
+// it, and the old media's end during a load must not either.
+func TestDeviceReportsDuringReload(t *testing.T) {
+	a, fake := playingApp(t, "LOADING", 130, 0, options.StreamOptions{})
+	idle := `{"type":"MEDIA_STATUS","status":[{"currentTime":12,"playerState":"IDLE","idleReason":"INTERRUPTED"}]}`
+
+	a.handleChromecastMessage(&fakeReceiver{}, castMessage(idle))
+	a.handleChromecastMessage(fake, castMessage(idle))
+	if a.playbackState.Status != "LOADING" || a.playbackState.CurrentTime != 130 {
+		t.Fatalf("state = %+v after old media's IDLE", a.playbackState)
+	}
+
+	playing := `{"type":"MEDIA_STATUS","status":[{"currentTime":131,"playerState":"PLAYING"}]}`
+	a.handleChromecastMessage(fake, castMessage(playing))
+	if a.playbackState.Status != "PLAYING" || a.playbackState.CurrentTime != 131 {
+		t.Fatalf("state = %+v after the new media plays", a.playbackState)
+	}
+}
+
+func castMessage(payload string) *cast_proto.CastMessage {
+	return &cast_proto.CastMessage{PayloadUtf8: &payload}
 }

@@ -7,7 +7,7 @@ quality, and the subtitle source. Local and remote go through the same UI and
 the same backend calls, with the only difference being which instance receives
 them.
 
-Status: Phases 0–2 done (2026-11-17); Phases 3–6 not started.
+Status: Phases 0–3 done (2026-11-17); Phases 4–6 not started.
 
 ## Where things stand
 
@@ -91,6 +91,14 @@ What doesn't:
 - `castapi.Client.ChangeTracks`, a Wails binding `RemoteChangeTracks`, and a
   `mediaService.changeTracks()` that routes local/remote like the other
   controls in `services/media.ts`.
+- As built: `CastToDevice` and `ChangeTracks` share `startCast`
+  (`prepareStream` builds the handler, `loadOnDevice` loads it at
+  `StartTime`). A paused cast reloads paused through `LoadOptions.Paused` in
+  our go-chromecast fork, so no Pause races the load. While the TV loads, the
+  status is `LOADING`. The device's IDLE report for the media being replaced
+  is ignored then, and messages from a replaced connection are dropped, so an
+  attached controller doesn't see a stop mid-switch. The status turns
+  `PLAYING`/`PAUSED` when the TV reports on the new media.
 
 ## Phase 4: UI
 

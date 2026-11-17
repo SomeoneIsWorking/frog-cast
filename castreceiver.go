@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/vishen/go-chromecast/application"
+	cast_proto "github.com/vishen/go-chromecast/cast/proto"
 )
 
 // castReceiver is the part of go-chromecast's Application that App drives.
@@ -25,7 +26,9 @@ type castReceiver interface {
 // device messages back to the app.
 func newChromecastReceiver(a *App) castReceiver {
 	app := application.NewApplication()
-	app.AddMessageFunc(a.handleChromecastMessage)
+	app.AddMessageFunc(func(msg *cast_proto.CastMessage) {
+		a.handleChromecastMessage(app, msg)
+	})
 	app.SetRequestTimeout(30 * time.Second)
 	return app
 }

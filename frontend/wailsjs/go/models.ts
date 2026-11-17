@@ -112,6 +112,12 @@ export namespace castapi {
 	    content_path: string;
 	    save_path: string;
 	}
+	export interface TrackChange {
+	    videoTrack?: number;
+	    audioTrack?: number;
+	    quality?: string;
+	    subtitlePath?: string;
+	}
 	export interface VideoTrackDisplayItem {
 	    Index: number;
 	    Codecs: string;

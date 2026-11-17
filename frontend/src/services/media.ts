@@ -35,6 +35,20 @@ export const mediaService = {
     return await UpdateSubtitleSettings(options);
   },
 
+  // changeTracks switches the running cast's tracks, quality or subtitle
+  // source on whichever instance is casting; omitted fields stay as they are.
+  async changeTracks(
+    change: castapi.TrackChange
+  ): Promise<castapi.PlaybackState> {
+    if (isRemoteActive()) {
+      const { RemoteChangeTracks } = await import("../../wailsjs/go/main/App");
+      const s = activeSource.value;
+      return await RemoteChangeTracks(s.base, s.token, change);
+    }
+    const { ChangeTracks } = await import("../../wailsjs/go/main/App");
+    return await ChangeTracks(change);
+  },
+
   async getMediaFiles(dirPath: string): Promise<string[]> {
     const { GetMediaFiles } = await import("../../wailsjs/go/main/App");
     return await GetMediaFiles(dirPath);

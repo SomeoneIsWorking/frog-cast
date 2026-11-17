@@ -245,3 +245,12 @@ func (c *Client) TranslateStatus() (*TranslateStatus, error) {
 func (c *Client) UpdateSubtitle(opts options.SubtitleCastOptions) error {
 	return c.do(http.MethodPost, "/subtitle", opts, nil)
 }
+
+// ChangeTracks switches the running cast's tracks, quality or subtitle source.
+func (c *Client) ChangeTracks(change TrackChange) (*PlaybackState, error) {
+	var resp PlayResponse
+	if err := c.do(http.MethodPost, "/tracks", change, &resp); err != nil {
+		return nil, err
+	}
+	return &resp.State, nil
+}

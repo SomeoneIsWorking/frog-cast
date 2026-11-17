@@ -47,6 +47,15 @@ type PlaybackState struct {
 	Selection *CastSelection `json:"selection,omitempty"`
 }
 
+// TrackChange is the body of POST /tracks: the parts of a running cast's
+// selection to switch. A nil field keeps the current choice.
+type TrackChange struct {
+	VideoTrack   *int    `json:"videoTrack,omitempty"`
+	AudioTrack   *int    `json:"audioTrack,omitempty"`
+	Quality      *string `json:"quality,omitempty"`
+	SubtitlePath *string `json:"subtitlePath,omitempty"`
+}
+
 // CastSelection is the track, quality and subtitle choice of a running cast.
 type CastSelection struct {
 	VideoTrack   int     `json:"videoTrack"`

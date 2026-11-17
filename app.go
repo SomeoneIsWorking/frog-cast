@@ -66,7 +66,10 @@ func (a *App) createApplication() {
 	if newReceiver == nil {
 		newReceiver = newChromecastReceiver
 	}
-	a.App = newReceiver(a)
+	receiver := newReceiver(a)
+	a.mu.Lock()
+	a.App = receiver
+	a.mu.Unlock()
 }
 
 func NewApp() *App {
@@ -197,10 +200,19 @@ func (a *App) GetTrackDisplayInfo(fileNameOrUrl string) (*TrackDisplayInfo, erro
 
 // CastToDevice casts media (local file or remote URL) to a device
 func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *options.CastOptions) (*PlaybackState, error) {
-	// Determine if input is a local file or remote URL
-	isRemote := strings.HasPrefix(fileNameOrUrl, "http://") || strings.HasPrefix(fileNameOrUrl, "https://")
+	state, err := a.startCast(deviceIp, fileNameOrUrl, a.streamOptionsFor(castOptions), 0, false)
+	if err != nil {
+		return nil, err
+	}
+	a.historyStore.Add(fileNameOrUrl, state.MediaName, castOptions)
+	return state, nil
+}
+
+// streamOptionsFor combines a cast's track choice with this instance's
+// subtitle and transcode settings.
+func (a *App) streamOptionsFor(castOptions *options.CastOptions) options.StreamOptions {
 	settings := a.GetSettings()
-	options := options.StreamOptions{
+	return options.StreamOptions{
 		Subtitle: options.SubtitleCastOptions{
 			Path:                 castOptions.SubtitlePath,
 			BurnIn:               settings.SubtitleBurnIn,
@@ -216,122 +228,184 @@ func (a *App) CastToDevice(deviceIp string, fileNameOrUrl string, castOptions *o
 		MaxOutputWidth:   settings.MaxOutputWidth,
 		NoTranscodeCache: settings.NoTranscodeCache,
 	}
-	var duration float64
-	var err error
-	var name string
+}
 
-	host := deviceIp
-	port := 8009
-
+// prepareStream builds the stream handler for the media and installs it on
+// the media server. It returns the media's display name and duration.
+func (a *App) prepareStream(fileNameOrUrl string, opts options.StreamOptions) (string, float64, error) {
+	isRemote := strings.HasPrefix(fileNameOrUrl, "http://") || strings.HasPrefix(fileNameOrUrl, "https://")
 	if isRemote {
-		// Use CastManager to prepare remote stream
 		logger.Info("Preparing remote stream", "url", fileNameOrUrl)
 		manager, err := a.RemoteManager.GetMedia(fileNameOrUrl)
 		if err != nil {
-			return nil, fmt.Errorf("failed to prepare remote stream: %w", err)
+			return "", 0, fmt.Errorf("failed to prepare remote stream: %w", err)
 		}
-
-		duration = manager.GetDuration()
-		name = manager.Title
-		// Create remote handler
-		handler, err := stream.NewRemoteHandler(a.ctx, manager, options, folders.Video(fileNameOrUrl))
+		handler, err := stream.NewRemoteHandler(a.ctx, manager, opts, folders.Video(fileNameOrUrl))
 		if err != nil {
-			return nil, fmt.Errorf("failed to create remote handler: %w", err)
+			return "", 0, fmt.Errorf("failed to create remote handler: %w", err)
 		}
-
-		// Set handler on server
 		a.mediaServer.SetHandler(handler)
-	} else {
-		mediaPath := fileNameOrUrl
-		name = filepath.Base(mediaPath)
-		// Get duration for local files
-		duration, err = ffmpeg.GetVideoDuration(mediaPath)
-		if err != nil {
-			logger.Warn("Failed to get duration", "error", err)
-			duration = 0
-		}
-
-		// Create local handler
-		handler := stream.NewLocalHandler(mediaPath, options)
-		a.mediaServer.SetHandler(handler)
-
-		// Set subtitle path (for legacy/compatibility, though options has it)
-		a.mediaServer.SetSubtitlePath(options.Subtitle.Path)
+		return manager.Title, manager.GetDuration(), nil
 	}
 
-	// Update playback state
+	duration, err := ffmpeg.GetVideoDuration(fileNameOrUrl)
+	if err != nil {
+		logger.Warn("Failed to get duration", "error", err)
+		duration = 0
+	}
+	a.mediaServer.SetHandler(stream.NewLocalHandler(fileNameOrUrl, opts))
+	a.mediaServer.SetSubtitlePath(opts.Subtitle.Path)
+	return filepath.Base(fileNameOrUrl), duration, nil
+}
+
+// startCast serves the media with opts and loads it on the device at start
+// seconds, playing or paused. deviceIp "local" only hosts the stream. While
+// the device loads, the status is LOADING; the device's own reports end it.
+func (a *App) startCast(deviceIp, fileNameOrUrl string, opts options.StreamOptions, start float64, paused bool) (*PlaybackState, error) {
+	name, duration, err := a.prepareStream(fileNameOrUrl, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	hostOnly := deviceIp == "local"
 	a.mu.Lock()
 	a.playbackState.MediaPath = fileNameOrUrl
 	a.playbackState.MediaName = name
 	a.playbackState.DeviceURL = deviceIp
 	a.playbackState.DeviceName = extractDeviceName(deviceIp)
 	a.playbackState.Duration = duration
-	a.streamOptions = &options
-	a.mu.Unlock()
-
-	if deviceIp == "local" {
-		// Just host the stream without casting
-		logger.Info("Hosting stream without casting", "url", a.getMediaURL())
-		a.mu.Lock()
+	a.playbackState.CurrentTime = start
+	a.positionAt = time.Now()
+	a.streamOptions = &opts
+	switch {
+	case !hostOnly:
+		a.playbackState.Status = "LOADING"
+	case paused:
+		a.playbackState.Status = "PAUSED"
+	default:
 		a.playbackState.Status = "PLAYING"
-		a.playbackState.CurrentTime = 0
-		a.positionAt = time.Now()
-		state := a.stateLocked()
-		a.mu.Unlock()
-		a.historyStore.Add(fileNameOrUrl, name, castOptions)
-		events.Emit("playback:state", state)
+	}
+	state := a.stateLocked()
+	a.mu.Unlock()
+	events.Emit("playback:state", state)
+
+	if hostOnly {
+		logger.Info("Hosting stream without casting", "url", a.getMediaURL())
 		return &state, nil
 	}
 
-	mediaURL := a.getMediaURL()
-	a.createApplication()
-
-	err = a.App.Start(host, port)
-
-	if err != nil {
+	if err := a.loadOnDevice(deviceIp, start, paused, opts); err != nil {
+		a.mu.Lock()
+		a.playbackState.Status = "STOPPED"
+		state := a.stateLocked()
+		a.mu.Unlock()
+		events.Emit("playback:state", state)
 		return nil, err
 	}
 
-	err = a.App.Load(mediaURL+"?cachebust="+time.Now().Format("20060102150405"), application.LoadOptions{
-		StartTime:   0,
+	logger.Info("Cast successful",
+		"message", fmt.Sprintf("Casting %s to %s via %s", name, deviceIp, a.getMediaURL()),
+		"device", deviceIp,
+		"media", fileNameOrUrl,
+		"start", start,
+		"subtitle", opts.Subtitle.Path,
+	)
+	a.mu.RLock()
+	state = a.stateLocked()
+	a.mu.RUnlock()
+	return &state, nil
+}
+
+// loadOnDevice connects to the device and loads the hosted stream on it.
+func (a *App) loadOnDevice(deviceIp string, start float64, paused bool, opts options.StreamOptions) error {
+	a.createApplication()
+	if err := a.App.Start(deviceIp, 8009); err != nil {
+		return err
+	}
+	err := a.App.Load(a.getMediaURL()+"?cachebust="+time.Now().Format("20060102150405"), application.LoadOptions{
+		StartTime:   int(start),
+		Paused:      paused,
 		Transcode:   false,
 		Detach:      true,
 		ForceDetach: false,
 		ContentType: "application/vnd.apple.mpegurl",
 		AppId:       customAppID,
 	})
-
 	if err != nil {
-		return nil, fmt.Errorf("failed to load media on device: %w", err)
+		return fmt.Errorf("failed to load media on device: %w", err)
 	}
-
-	err = a.App.Update()
-	if err != nil {
-		return nil, fmt.Errorf("failed to update media status: %w", err)
+	if err := a.App.Update(); err != nil {
+		return fmt.Errorf("failed to update media status: %w", err)
 	}
-
-	logger.Info("Cast successful",
-		"message", fmt.Sprintf("Casting %s to %s via %s", name, deviceIp, mediaURL),
-		"device", deviceIp,
-		"media", fileNameOrUrl,
-		"subtitle", options.Subtitle.Path,
-	)
-
-	// Add to history
-	a.historyStore.Add(fileNameOrUrl, name, castOptions)
-
-	if options.Subtitle.Path != "none" && !settings.SubtitleBurnIn {
+	if opts.Subtitle.Path != "none" && !opts.Subtitle.BurnIn {
 		a.sendSubtitles(fmt.Sprintf("http://%s:%d/subtitles.vtt", a.localIp, a.port))
 	}
+	return nil
+}
 
-	a.mu.Lock()
-	a.playbackState.Status = "PLAYING"
-	a.playbackState.CurrentTime = 0
-	a.positionAt = time.Now()
+// ChangeTracks switches the running cast's video track, audio track, quality
+// or subtitle source; nil fields keep the current choice. An external
+// subtitle change without burn-in is applied live. Anything else re-casts the
+// same media to the same device at the current position, keeping it paused
+// if it was.
+func (a *App) ChangeTracks(change castapi.TrackChange) (*PlaybackState, error) {
+	a.mu.RLock()
+	if a.streamOptions == nil || a.playbackState.Status == "STOPPED" {
+		a.mu.RUnlock()
+		return nil, fmt.Errorf("nothing is playing")
+	}
+	current := *a.streamOptions
+	mediaPath := a.playbackState.MediaPath
+	deviceIp := a.playbackState.DeviceURL
+	paused := a.playbackState.Status == "PAUSED"
+	position := a.extrapolatedPosition()
 	state := a.stateLocked()
-	a.mu.Unlock()
-	events.Emit("playback:state", state)
+	a.mu.RUnlock()
 
+	next := current
+	if change.VideoTrack != nil {
+		next.VideoTrack = *change.VideoTrack
+	}
+	if change.AudioTrack != nil {
+		next.AudioTrack = *change.AudioTrack
+	}
+	if change.Quality != nil {
+		next.Bitrate = *change.Quality
+	}
+	if change.SubtitlePath != nil {
+		next.Subtitle.Path = *change.SubtitlePath
+		if next.Subtitle.Path == "" {
+			next.Subtitle.Path = "none"
+		}
+	}
+	if next == current {
+		return &state, nil
+	}
+
+	sameStream := next.VideoTrack == current.VideoTrack &&
+		next.AudioTrack == current.AudioTrack &&
+		next.Bitrate == current.Bitrate
+	if sameStream && !next.Subtitle.BurnIn {
+		if err := a.UpdateSubtitleSettings(next.Subtitle); err != nil {
+			return nil, err
+		}
+		s := a.currentPlaybackState()
+		state = s
+	} else {
+		logger.Info("Re-casting with new tracks", "media", mediaPath, "position", position)
+		s, err := a.startCast(deviceIp, mediaPath, next, position, paused)
+		if err != nil {
+			return nil, err
+		}
+		state = *s
+	}
+
+	a.historyStore.Add(mediaPath, state.MediaName, &options.CastOptions{
+		SubtitlePath: next.Subtitle.Path,
+		VideoTrack:   next.VideoTrack,
+		AudioTrack:   next.AudioTrack,
+		Bitrate:      next.Bitrate,
+	})
 	return &state, nil
 }
 
@@ -575,10 +649,12 @@ func (a *App) StopPlayback() error {
 }
 
 func (a *App) stopPlayback(stopMedia bool) error {
-	if a.App != nil {
-		err := a.App.Close(stopMedia)
-		a.App = nil
-		return err
+	a.mu.Lock()
+	receiver := a.App
+	a.App = nil
+	a.mu.Unlock()
+	if receiver != nil {
+		return receiver.Close(stopMedia)
 	}
 	return nil
 }
@@ -889,9 +965,17 @@ func (a *App) ClearHistory() error {
 	return a.historyStore.Clear()
 }
 
-// handleChromecastMessage handles messages from Chromecast
-func (a *App) handleChromecastMessage(msg *cast_proto.CastMessage) {
+// handleChromecastMessage handles messages from the device connection from.
+// A connection that has since been replaced reports on a session that is
+// gone, so its messages are dropped.
+func (a *App) handleChromecastMessage(from castReceiver, msg *cast_proto.CastMessage) {
 	if msg.PayloadUtf8 == nil {
+		return
+	}
+	a.mu.RLock()
+	current := a.App == from
+	a.mu.RUnlock()
+	if !current {
 		return
 	}
 
@@ -936,6 +1020,12 @@ func (a *App) handleChromecastMessage(msg *cast_proto.CastMessage) {
 			status := resp.Status[0]
 
 			a.mu.Lock()
+			// While a load is in flight the device still reports on the media
+			// being replaced; its IDLE end must not read as the cast stopping.
+			if a.playbackState.Status == "LOADING" && status.PlayerState == "IDLE" {
+				a.mu.Unlock()
+				return
+			}
 			a.playbackState.CurrentTime = status.CurrentTime
 			a.positionAt = time.Now()
 

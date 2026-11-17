@@ -18,6 +18,10 @@ export function CastToDevice(arg1, arg2, arg3) {
   return window['go']['main']['App']['CastToDevice'](arg1, arg2, arg3);
 }
 
+export function ChangeTracks(arg1) {
+  return window['go']['main']['App']['ChangeTracks'](arg1);
+}
+
 export function ClearCache() {
   return window['go']['main']['App']['ClearCache']();
 }
@@ -140,6 +144,10 @@ export function ProcessPastedTranslation(arg1, arg2, arg3) {
 
 export function RemoteAddTorrent(arg1, arg2, arg3) {
   return window['go']['main']['App']['RemoteAddTorrent'](arg1, arg2, arg3);
+}
+
+export function RemoteChangeTracks(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RemoteChangeTracks'](arg1, arg2, arg3);
 }
 
 export function RemoteControl(arg1, arg2, arg3, arg4) {

@@ -13,6 +13,7 @@ package main
 //   POST /play          – play a library item by id (+ track/subtitle/quality)
 //   POST /play-url      – play an arbitrary URL (+ track/subtitle/quality)
 //   POST /control       – transport: pause/resume/stop/seek/volume/mute
+//   POST /tracks        – switch the running cast's tracks/quality/subtitle source
 //   POST /translate     – start a subtitle translation for a media item
 //   GET  /translate-status – poll translation progress
 //   GET  /translation-info – whether a translation already exists for an item
@@ -230,6 +231,7 @@ func (h *HTTPServer) Start(port int) error {
 	mux.HandleFunc("/library/translate-season/status", h.handleSeasonStatus)
 	mux.HandleFunc("/library/translate-season/cancel", h.handleSeasonCancel)
 	mux.HandleFunc("/subtitle", h.handleSubtitle)
+	mux.HandleFunc("/tracks", h.handleTracks)
 
 	h.listener = ln
 	h.srv = &http.Server{
@@ -1003,6 +1005,27 @@ func (h *HTTPServer) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleTracks switches the running cast's video/audio track, quality or
+// subtitle source (castapi.TrackChange) and returns the resulting state.
+func (h *HTTPServer) handleTracks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "method not allowed"})
+		return
+	}
+	var change castapi.TrackChange
+	if err := json.NewDecoder(r.Body).Decode(&change); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "invalid JSON body"})
+		return
+	}
+	state, err := h.app.ChangeTracks(change)
+	if err != nil {
+		logger.Error("Remote API: track change failed", "error", err)
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, playResponse{OK: true, State: *state})
 }
 
 // ----------------------------------------------------------------------------

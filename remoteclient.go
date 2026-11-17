@@ -15,6 +15,7 @@ import (
 type CastInstance = castapi.CastInstance
 type RemoteDevice = castapi.RemoteDevice
 type RemotePlayOptions = castapi.PlayOptions
+type TrackChange = castapi.TrackChange
 
 func (a *App) DiscoverCastInstances() ([]CastInstance, error) {
 	return castapi.Discover(context.Background())
@@ -99,4 +100,8 @@ func (a *App) RemoteTranslateStatus(base, token string) (*translateStatus, error
 
 func (a *App) RemoteUpdateSubtitle(base, token string, opts options.SubtitleCastOptions) error {
 	return castapi.New(base, token).UpdateSubtitle(opts)
+}
+
+func (a *App) RemoteChangeTracks(base, token string, change TrackChange) (*PlaybackState, error) {
+	return castapi.New(base, token).ChangeTracks(change)
 }
