@@ -39,8 +39,10 @@ type webView struct {
 	recent  *widget.Label
 	link    *widget.Entry
 	quality *widget.Select
-	cast    *widget.Button
-	status  *widget.Label
+	// maxHeight caps the variant cast, from the Resolution picker.
+	maxHeight int
+	cast      *widget.Button
+	status    *widget.Label
 }
 
 func newWebView(s *session) *webView {
@@ -59,8 +61,21 @@ func newWebView(s *session) *webView {
 
 	v.quality = widget.NewSelect(qualityLabels, nil)
 	v.quality.PlaceHolder = "Instance default"
+	prefs := s.ui.fyneApp.Preferences()
+	v.maxHeight = prefs.IntWithFallback(prefMaxHeight, 1080)
+	resolution := widget.NewSelect(resolutionLabels, func(string) {})
+	for i, h := range resolutionHeights {
+		if h == v.maxHeight {
+			resolution.SetSelectedIndex(i)
+		}
+	}
+	resolution.OnChanged = func(string) {
+		v.maxHeight = resolutionHeights[resolution.SelectedIndex()]
+		prefs.SetInt(prefMaxHeight, v.maxHeight)
+	}
 	form := widget.NewForm(
 		widget.NewFormItem("Cast to", s.targets.newSelect()),
+		widget.NewFormItem("Resolution", resolution),
 		widget.NewFormItem("Quality", v.quality),
 	)
 
@@ -129,12 +144,13 @@ func (v *webView) castLink() {
 		opts.Quality = &qualityValues[i]
 	}
 	v.cast.Disable()
-	v.setStatus("Asking " + v.s.name + "…")
+	v.setStatus(v.s.name + " is finding the page's stream…")
+	maxHeight := v.maxHeight
 	go func() {
-		st, err := v.s.client.Play(page.URL, host, opts)
+		st, err := v.castFromInstance(page.URL, host, opts, maxHeight)
 		if errors.Is(err, castapi.ErrNeedsExtraction) {
 			fyne.Do(func() { v.setStatus("Tap play on the page; it closes once the stream is found.") })
-			st, err = v.extractHere(page.URL, host, opts)
+			st, err = v.extractHere(page.URL, host, opts, maxHeight)
 		}
 		fyne.Do(func() {
 			v.cast.Enable()
@@ -150,9 +166,20 @@ func (v *webView) castLink() {
 	}()
 }
 
+// castFromInstance has the instance extract the page, then casts the variant
+// maxHeight allows.
+func (v *webView) castFromInstance(pageURL, host string, opts castapi.PlayOptions, maxHeight int) (*castapi.PlaybackState, error) {
+	info, err := v.s.client.TrackInfo(pageURL)
+	if err != nil {
+		return nil, err
+	}
+	opts.VideoTrack = variantFor(info.VideoTracks, maxHeight)
+	return v.s.client.Play(pageURL, host, opts)
+}
+
 // extractHere finds the page's stream on this phone and has the instance
-// cast it.
-func (v *webView) extractHere(pageURL, host string, opts castapi.PlayOptions) (*castapi.PlaybackState, error) {
+// cast the variant maxHeight allows.
+func (v *webView) extractHere(pageURL, host string, opts castapi.PlayOptions, maxHeight int) (*castapi.PlaybackState, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
 	defer cancel()
 	res, err := extractPage(ctx, pageURL)
@@ -167,6 +194,7 @@ func (v *webView) extractHere(pageURL, host string, opts castapi.PlayOptions) (*
 		Headers:     res.Headers,
 		Cookies:     res.Cookies,
 	}
+	opts.VideoTrack = variantFor(manifestVariants(res.Manifest), maxHeight)
 	for _, sub := range res.Subtitles {
 		page.Subtitles = append(page.Subtitles, castapi.PageSubtitle{Label: sub.Label, Content: sub.Content})
 	}

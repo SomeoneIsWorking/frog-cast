@@ -653,7 +653,8 @@ func (h *HTTPServer) handleControl(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTrackInfo returns the video/audio/subtitle tracks for a media item so
-// the client can offer track and subtitle pickers before playing.
+// the client can offer track and subtitle pickers before playing. A web page
+// is extracted first; one without a script is 409 like /play.
 // GET /track-info?id=<path-or-url>
 func (h *HTTPServer) handleTrackInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -664,6 +665,13 @@ func (h *HTTPServer) handleTrackInfo(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "id query parameter is required"})
 		return
+	}
+	// A page needing a visible browser is the controller's to extract.
+	if isWebURL(id) {
+		if err := h.app.readyPage(id, 0, 0, false); err != nil {
+			writeCastError(w, err)
+			return
+		}
 	}
 	info, err := h.app.GetTrackDisplayInfo(id)
 	if err != nil {

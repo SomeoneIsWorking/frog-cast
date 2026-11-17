@@ -48,7 +48,10 @@ The launcher icon is the desktop app's (`build/appicon.png`).
   tree. An episode opens the play sheet: cast target (remembered), audio,
   subtitles (the file beside the episode is picked by default) and quality.
 - **Web page** (from Library, or Share › Frog Cast Remote in a browser): cast
-  a page link; recent pages are kept on the phone. The app closes when it
+  a page link; recent pages are kept on the phone. Resolution (remembered,
+  default up to 1080p) picks the tallest variant of the page's playlist within
+  it: every variant is re-encoded at its own size, and many TVs refuse more
+  than 1080p. The app closes when it
   leaves the screen, since Fyne's activity ignores a share sent to a running
   app. The instance extracts pages it has a script for. For any other page
   it answers 409, and the page opens full screen on the phone: tap play, and
