@@ -25,6 +25,7 @@ directory for mobile targets):
 ```
 go install fyne.io/tools/cmd/fyne@v1.7.4
 export ANDROID_HOME=<sdk> ANDROID_NDK_HOME=<sdk>/ndk/<version>
+go generate ./pkg/webextract   # the WebView bridge (needs a JDK)
 cd cmd/mobile
 fyne package -os android/arm64 --app-id io.wailscast.remote --name "Cast Remote" --icon Icon.png
 adb install -r Cast_Remote.apk
@@ -47,6 +48,13 @@ shipping.
 - **Library**: shows, then seasons, then episodes, from the instance's library
   tree. An episode opens the play sheet: cast target (remembered), audio,
   subtitles (the file beside the episode is picked by default) and quality.
+- **Web page** (from Library): cast a page link; recent pages are kept on the
+  phone. The instance extracts pages it has a script for. For any other page
+  it answers 409, and the page opens full screen on the phone: tap play, and
+  once it requests its stream the page closes and the stream, its headers,
+  cookies and subtitles go to `/play-extracted`. Back closes the page and
+  cancels. This needs Android 8 and a WebView with document-start scripts
+  (any current one).
 - **Playing**: the running cast, polled every second while on screen: seek,
   ±10/30 s, pause, volume and mute, stop. **Subtitles** adjusts timing, size
   and style live; **Tracks** switches video, quality, audio and subtitle

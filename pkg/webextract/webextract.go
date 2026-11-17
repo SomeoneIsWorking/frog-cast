@@ -4,6 +4,8 @@
 // native host exists. The same script runs in an Android WebView.
 package webextract
 
+//go:generate go run wails-cast/cmd/androiddex
+
 import (
 	"context"
 	_ "embed"

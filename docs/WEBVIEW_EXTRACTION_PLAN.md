@@ -2,8 +2,8 @@
 
 Status (2026-11-17): the app extracts through `pkg/webextract`: WebKitGTK on
 Linux, with no Chrome or devtools; Chromium, running the same script, on
-other platforms until a native host exists. The phone and macOS hosts are
-open (see Next).
+other platforms until a native host exists; and the phone remote's Android
+WebView. The macOS host is open (see Next).
 
 ## Why
 
@@ -79,13 +79,24 @@ demo page and found its master in 3.5 s. The Chromium host finds the same
 streams, but launching rod's downloaded Chromium (no Chrome installed here)
 takes 25 s, as it did for the old extractor.
 
+## Android host
+
+`android.go` drives `android/Bridge.java`: a full-screen WebView dialog over
+the Fyne activity, `capture.js` added with androidx.webkit's
+`addDocumentStartJavaScript` (every frame), messages through the `CastBridge`
+JavaScript interface into a queue Go reads over JNI, and `CookieManager` for
+the stream's cookies, HttpOnly included. Fyne's packager can't add Java
+classes, so `cmd/androiddex` (`go generate ./pkg/webextract`) compiles the
+bridge with androidx.webkit 1.18.0 (Apache-2.0, fetched from Google's Maven
+and checksummed) into `bridge.dex`, which the app embeds and loads with an
+`InMemoryDexClassLoader`. The JVM comes from the caller (Fyne's
+`driver.RunNative`), so the package doesn't depend on Fyne.
+
+On the phone (Honor, Android 17, WebView 157) the hls.js demo page went from
+the instance's 409 to a cast on fedora in 6 s, with the WebView's
+User-Agent.
+
 ## Next
 
-1. Phone: the same `capture.js` in an Android WebView
-   (`addDocumentStartJavaScript` for every frame, a `CastBridge` JavaScript
-   interface, `CookieManager` for HttpOnly cookies), sending the result with
-   `/play-extracted`. Fyne has no WebView, so this needs either a native
-   Android screen in the remote or the move to Wails 3 (stable on desktop
-   since v3.0.0; mobile still experimental).
-2. macOS: the same script through `WKUserScript` (all frames) and a
+1. macOS: the same script through `WKUserScript` (all frames) and a
    `WKScriptMessageHandler`, replacing the Chromium host and go-rod.

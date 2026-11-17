@@ -62,3 +62,7 @@ Thumbs.db
 build/mobile/
 scratch/
 build/tools/
+
+# Built by cmd/androiddex
+build/androiddex/
+pkg/webextract/bridge.dex

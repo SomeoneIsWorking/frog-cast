@@ -14,7 +14,8 @@ import (
 )
 
 // libraryView browses the instance's library: shows, then seasons, then
-// episodes; tapping an episode opens the play sheet.
+// episodes; tapping an episode opens the play sheet. Web pages open from here
+// too.
 type libraryView struct {
 	s       *session
 	pages   *pageStack
@@ -57,8 +58,13 @@ func newLibraryView(s *session) *libraryView {
 	v.status = caption("Loading…")
 	v.status.Alignment = fyne.TextAlignCenter
 
+	web := widget.NewButtonWithIcon("Web page", theme.MediaVideoIcon(), func() {
+		v.pages.push("Web page", s.web.content)
+	})
+	web.Importance = widget.LowImportance
+
 	root := container.NewBorder(
-		container.NewBorder(nil, nil, nil, refresh, search),
+		container.NewBorder(nil, nil, nil, container.NewHBox(web, refresh), search),
 		v.status, nil, nil, v.list)
 	v.pages = newPageStack(root)
 	v.content = v.pages.content

@@ -1,4 +1,4 @@
-//go:build !chromium
+//go:build !chromium && !android
 
 package webextract
 

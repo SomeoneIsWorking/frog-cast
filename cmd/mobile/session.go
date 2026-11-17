@@ -20,6 +20,7 @@ type session struct {
 	playingTab *container.TabItem
 	torrentTab *container.TabItem
 	library    *libraryView
+	web        *webView
 	playing    *nowPlaying
 	torrents   *torrentsView
 	manage     *manageView
@@ -30,6 +31,7 @@ func (u *ui) openSession(name string, client *castapi.Client) {
 	s := &session{ui: u, name: name, client: client}
 	s.targets = newTargetPicker(s)
 	s.library = newLibraryView(s)
+	s.web = newWebView(s)
 	s.playing = newNowPlaying(s)
 	s.torrents = newTorrentsView(s)
 	s.manage = newManageView(s)

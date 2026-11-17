@@ -78,10 +78,18 @@ func TestRenderScreens(t *testing.T) {
 		closeOverlays(w)
 	}
 
-	s.tabs.SelectIndex(2)
+	s.tabs.Select(s.torrentTab)
 	snap("8-torrents")
-	s.tabs.SelectIndex(3)
+	s.tabs.SelectIndex(len(s.tabs.Items) - 1)
 	snap("9-manage")
+	s.tabs.SelectIndex(0)
+	s.library.pages.back()
+	s.library.pages.back()
+	s.library.pages.push("Web page", s.web.content)
+	snap("10-web")
+	s.web.castSheet(webPage{URL: "https://example.test/film/"})
+	snap("11-web-cast")
+	closeOverlays(w)
 	u.closeSession()
 }
 
