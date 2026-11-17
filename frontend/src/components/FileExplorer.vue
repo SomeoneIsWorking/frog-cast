@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useCastStore } from "../stores/cast";
+import { useHistoryStore } from "../stores/history";
 import { ArrowRightCircle } from "lucide-vue-next";
 import FileSelector from "./FileSelector.vue";
 import History from "./History.vue";
@@ -11,6 +12,7 @@ const emit = defineEmits<{
 }>();
 
 const store = useCastStore();
+const historyStore = useHistoryStore();
 const selectedFile = ref("");
 const isLoading = ref(false);
 
@@ -28,7 +30,16 @@ const handleCast = async (mediaPath: string) => {
 };
 
 const handleHistorySelect = async (path: string) => {
-  await handleCast(path);
+  const source = historyStore.source;
+  if (source.kind === "local") return await handleCast(path);
+  if (isLoading.value) return;
+  isLoading.value = true;
+  try {
+    await store.prepareHistoryItem(path, source);
+    emit("options");
+  } finally {
+    isLoading.value = false;
+  }
 };
 
 const acceptedExtensions = [

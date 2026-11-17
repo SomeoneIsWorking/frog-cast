@@ -81,14 +81,20 @@ func TestRenderScreens(t *testing.T) {
 		closeOverlays(w)
 	}
 
-	s.tabs.Select(tabTorrents)
-	snap("8-torrents")
+	s.tabs.Select(tabDownloads)
+	snap("8-downloads")
 	s.tabs.Select(tabManage)
 	snap("9-manage")
 	s.tabs.Select(tabLibrary)
 	s.library.pages.back()
 	s.library.pages.back()
-	s.web.remember(webPage{URL: "https://hlsjs.video-dev.org/demo/", Title: "hls.js demo"})
+	s.library.pages.push("History", s.history.content)
+	s.history.show([]castapi.HistoryItem{
+		{Path: "https://hlsjs.video-dev.org/demo/", Name: "hls.js demo", Timestamp: time.Now().Add(-2 * time.Hour).Format(time.RFC3339)},
+		{Path: "/mnt/TV/Frieren/Season 1/S01E03.mkv", Name: "Frieren S01E03", Timestamp: time.Now().Add(-26 * time.Hour).Format(time.RFC3339)},
+	})
+	snap("12-history")
+	s.library.pages.back()
 	s.library.pages.push("Web page", s.web.content)
 	s.web.link.SetText("https://www.example.test/film/sevimli-canavarlar-monsters-inc-2/")
 	snap("10-web")

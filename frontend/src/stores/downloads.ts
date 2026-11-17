@@ -1,99 +1,40 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
-import {
-  GetDownloadStatus,
-  RemoteDownload,
-  RemoteSetDownload,
-  StartDownload,
-  StopDownload,
-} from "../../wailsjs/go/main/App";
-import { remote } from "wailsjs/go/models";
+import { castapi, remote } from "../../wailsjs/go/models";
+import { instanceService } from "@/services/instance";
 import { useCastStore } from "./cast";
-
-// A web page track's download into the cache of the instance that casts it.
-export interface TrackDownload {
-  URL: string;
-  MediaType: string;
-  Track: number;
-  Status: string;
-  Done: number;
-  Total: number;
-}
 
 const key = (url: string, mediaType: string, track: number) =>
   `${url}|${mediaType}|${track}`;
 
-// Downloads run on the source of the Cast Options panel: this machine, or the
-// remote instance the page will be cast from. This machine reports progress by
-// event; a remote is polled while a download runs.
+// The Cast Options panel's track downloads, on the panel's source: this
+// machine, or the remote instance the page will be cast from. This machine
+// reports progress by event; a remote is polled while a download runs.
 export const useDownloadsStore = defineStore("downloads", () => {
-  const downloads = ref<Record<string, TrackDownload>>({});
+  const downloads = ref<Record<string, castapi.DownloadStatus>>({});
   const polls = new Map<string, number>();
-
-  const put = (
-    url: string,
-    mediaType: string,
-    track: number,
-    status: string,
-    done: number,
-    total: number,
-  ) => {
-    downloads.value[key(url, mediaType, track)] = {
-      URL: url,
-      MediaType: mediaType,
-      Track: track,
-      Status: status,
-      Done: done,
-      Total: total,
-    };
-  };
-  const putSegments = (
-    url: string,
-    mediaType: string,
-    track: number,
-    status: string,
-    segments: boolean[],
-  ) =>
-    put(
-      url,
-      mediaType,
-      track,
-      status,
-      segments.filter((s) => s).length,
-      segments.length,
-    );
 
   EventsOn("download:progress", (data: remote.DownloadStatus) => {
     if (useCastStore().optionsSource.kind === "remote") return;
-    putSegments(
-      data.URL,
-      data.MediaType,
-      data.Track,
-      data.Status,
-      data.Segments,
-    );
+    downloads.value[key(data.URL, data.MediaType, data.Track)] = {
+      status: data.Status,
+      done: data.Segments.filter((s) => s).length,
+      total: data.Segments.length,
+    };
   });
 
   const loadTrackProgress = async (
     url: string,
     mediaType: string,
-    track: number,
+    track: number
   ) => {
-    const source = useCastStore().optionsSource;
-    if (source.kind === "remote") {
-      const s = await RemoteDownload(
-        source.base,
-        source.token,
-        url,
-        mediaType,
-        track,
-      );
-      put(url, mediaType, track, s.status, s.done, s.total);
-    } else {
-      const s = await GetDownloadStatus(url, mediaType, track);
-      putSegments(url, mediaType, track, s.Status, s.Segments);
-    }
+    downloads.value[key(url, mediaType, track)] = await instanceService.download(
+      useCastStore().optionsSource,
+      url,
+      mediaType,
+      track
+    );
   };
 
   const poll = (url: string, mediaType: string, track: number) => {
@@ -103,7 +44,7 @@ export const useDownloadsStore = defineStore("downloads", () => {
       try {
         await loadTrackProgress(url, mediaType, track);
       } finally {
-        if (downloads.value[k]?.Status !== "INPROGRESS") {
+        if (downloads.value[k]?.status !== "INPROGRESS") {
           window.clearInterval(id);
           polls.delete(k);
         }
@@ -116,30 +57,23 @@ export const useDownloadsStore = defineStore("downloads", () => {
     url: string,
     mediaType: string,
     track: number,
-    start: boolean,
+    start: boolean
   ) => {
     const source = useCastStore().optionsSource;
-    if (source.kind === "remote") {
-      const s = await RemoteSetDownload(source.base, source.token, {
+    downloads.value[key(url, mediaType, track)] =
+      await instanceService.setDownload(source, {
         url,
         type: mediaType,
         track,
         start,
       });
-      put(url, mediaType, track, s.status, s.done, s.total);
-      if (start) poll(url, mediaType, track);
-    } else if (start) {
-      await StartDownload(url, mediaType, track);
-    } else {
-      await StopDownload(url, mediaType, track);
-    }
+    if (start && source.kind === "remote") poll(url, mediaType, track);
   };
 
   const getDownloadState = (url: string, mediaType: string, track: number) =>
     downloads.value[key(url, mediaType, track)];
 
   return {
-    downloads,
     getDownloadState,
     loadTrackProgress,
     startDownload: (url: string, mediaType: string, track: number) =>

@@ -60,9 +60,15 @@ func newLibraryView(s *session) *libraryView {
 	webRow := newRow(theme.MediaVideoIcon())
 	webRow.set("Cast a web page", "Paste a link, or share one from the browser")
 	web := newTapCard(webRow, func() { v.pages.push("Web page", s.web.content) })
+	historyRow := newRow(theme.HistoryIcon())
+	historyRow.set("History", "What "+s.name+" has cast")
+	history := newTapCard(historyRow, func() {
+		v.pages.push("History", s.history.content)
+		s.history.load()
+	})
 
 	root := container.NewBorder(
-		container.NewVBox(container.NewBorder(nil, nil, nil, refresh, search), web, section("SHOWS")),
+		container.NewVBox(container.NewBorder(nil, nil, nil, refresh, search), web, history, section("SHOWS")),
 		v.status, nil, nil, v.list)
 	v.pages = newPageStack(root)
 	v.content = v.pages.content

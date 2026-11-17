@@ -21,6 +21,7 @@ const prefLanguage = "translateLanguage"
 type manageView struct {
 	s       *session
 	content fyne.CanvasObject
+	cache   *cacheView
 
 	tree    *castapi.LibraryScanResult
 	seasons []seasonRef
@@ -87,7 +88,9 @@ func newManageView(s *session) *manageView {
 	v.progressBox = card(container.NewBorder(nil, nil, nil, cancel, container.NewVBox(v.progressText, v.progress)))
 	v.progressBox.Hide()
 
+	v.cache = newCacheView(s)
 	top := container.NewVBox(
+		v.cache.content,
 		container.NewGridWithColumns(3, scan, v.identify, v.organize),
 		section("SEASONS · TRANSLATE SUBTITLES"),
 	)

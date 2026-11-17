@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/url"
 	"strings"
@@ -16,18 +15,8 @@ import (
 	"frog-cast/pkg/castapi"
 )
 
-const (
-	prefWebPages = "webPages"
-	maxWebPages  = 15
-	// extractTimeout leaves time to find and tap play on the page.
-	extractTimeout = 5 * time.Minute
-)
-
-// webPage is a page cast before, newest first in the list.
-type webPage struct {
-	URL   string `json:"url"`
-	Title string `json:"title"`
-}
+// extractTimeout leaves time to find and tap play on the page.
+const extractTimeout = 5 * time.Minute
 
 // webView opens web pages for casting: the instance extracts a page it has
 // a script for; any other page opens here for someone to tap play. Either
@@ -36,9 +25,6 @@ type webPage struct {
 type webView struct {
 	s       *session
 	content fyne.CanvasObject
-	pages   []webPage
-	list    *widget.List
-	recent  *widget.Label
 	link    *widget.Entry
 	open    *widget.Button
 	status  *widget.Label
@@ -48,7 +34,6 @@ type webView struct {
 
 func newWebView(s *session) *webView {
 	v := &webView{s: s}
-	_ = json.Unmarshal([]byte(s.ui.fyneApp.Preferences().String(prefWebPages)), &v.pages)
 
 	// Wrapped, so a whole link shows without scrolling sideways.
 	v.link = widget.NewMultiLineEntry()
@@ -65,37 +50,14 @@ func newWebView(s *session) *webView {
 	v.status = caption("")
 	v.status.Hide()
 
-	v.recent = section("RECENT PAGES")
-	v.list = cardList(
-		func() int { return len(v.pages) },
-		func() fyne.CanvasObject { return newRow(theme.MediaVideoIcon()) },
-		func(i widget.ListItemID, o fyne.CanvasObject) {
-			page := v.pages[i]
-			title := page.Title
-			if title == "" {
-				title = page.URL
-			}
-			host := page.URL
-			if u, err := url.Parse(page.URL); err == nil {
-				host = u.Host
-			}
-			o.(*row).set(title, host)
-		},
-	)
-	v.list.OnSelected = func(i widget.ListItemID) {
-		v.list.Unselect(i)
-		v.link.SetText(v.pages[i].URL)
-		v.openPage(v.pages[i].URL)
-	}
-	v.recent.Hidden = len(v.pages) == 0
-
-	top := container.NewVBox(container.NewBorder(nil, nil, nil, paste, v.link), v.open, v.status, v.recent)
-	v.content = container.NewBorder(top, nil, nil, nil, v.list)
+	hint := note("Pages cast before are in History.")
+	hint.SizeName = theme.SizeNameCaptionText
+	v.content = container.NewVBox(container.NewBorder(nil, nil, nil, paste, v.link), v.open, v.status, hint)
 	return v
 }
 
-// share shows a link shared to the app and opens it.
-func (v *webView) share(link string) {
+// show opens a link on the Web page screen, where its progress shows.
+func (v *webView) show(link string) {
 	v.s.tabs.Select(tabLibrary)
 	if v.s.library.pages.top() != v.content {
 		v.s.library.pages.push("Web page", v.content)
@@ -162,19 +124,4 @@ func (v *webView) extractHere(pageURL string) (*castapi.TrackDisplayInfo, error)
 		page.Subtitles = append(page.Subtitles, castapi.PageSubtitle{Label: sub.Label, Content: sub.Content})
 	}
 	return v.s.client.SendExtracted(page)
-}
-
-func (v *webView) remember(page webPage) {
-	pages := []webPage{page}
-	for _, p := range v.pages {
-		if p.URL != page.URL && len(pages) < maxWebPages {
-			pages = append(pages, p)
-		}
-	}
-	v.pages = pages
-	if data, err := json.Marshal(pages); err == nil {
-		v.s.ui.fyneApp.Preferences().SetString(prefWebPages, string(data))
-	}
-	v.recent.Show()
-	v.list.Refresh()
 }

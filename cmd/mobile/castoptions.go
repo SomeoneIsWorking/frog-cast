@@ -89,14 +89,13 @@ func newPageOptions(v *webView, pageURL string, info *castapi.TrackDisplayInfo) 
 		}
 		cast.Disable()
 		go func() {
-			st, err := s.client.Play(pageURL, host, opts)
+			_, err := s.client.Play(pageURL, host, opts)
 			fyne.Do(func() {
 				cast.Enable()
 				if err != nil {
 					s.ui.fail(err)
 					return
 				}
-				v.remember(webPage{URL: pageURL, Title: st.MediaName})
 				s.showPlaying()
 			})
 		}()

@@ -3,8 +3,6 @@
 import {options} from '../models';
 import {castapi} from '../models';
 import {main} from '../models';
-import {folders} from '../models';
-import {remote} from '../models';
 import {ffmpeg} from '../models';
 
 export function ApplyRemoteAPISettings(arg1:boolean,arg2:number,arg3:string):Promise<void>;
@@ -29,15 +27,17 @@ export function DiscoverCastInstances():Promise<Array<castapi.CastInstance>>;
 
 export function DiscoverDevices():Promise<Array<main.Device>>;
 
+export function Download(arg1:string,arg2:string,arg3:number):Promise<castapi.DownloadStatus>;
+
+export function Downloads():Promise<Array<castapi.PageDownload>>;
+
 export function Export():Promise<main.AppExports>;
 
 export function ExportEmbeddedSubtitles(arg1:string):Promise<void>;
 
 export function GenerateTranslationPrompt(arg1:string,arg2:string):Promise<string>;
 
-export function GetCacheStats():Promise<folders.CacheStats>;
-
-export function GetDownloadStatus(arg1:string,arg2:string,arg3:number):Promise<remote.DownloadStatusQeuryResponse>;
+export function GetCacheStats():Promise<castapi.CacheStats>;
 
 export function GetFFmpegInfo(arg1:boolean):Promise<ffmpeg.FFmpegInfo>;
 
@@ -79,7 +79,11 @@ export function ProcessPastedTranslation(arg1:string,arg2:string,arg3:string):Pr
 
 export function RemoteAddTorrent(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function RemoteCacheStats(arg1:string,arg2:string):Promise<castapi.CacheStats>;
+
 export function RemoteChangeTracks(arg1:string,arg2:string,arg3:castapi.TrackChange):Promise<castapi.PlaybackState>;
+
+export function RemoteClearCache(arg1:string,arg2:string,arg3:string):Promise<castapi.CacheStats>;
 
 export function RemoteControl(arg1:string,arg2:string,arg3:string,arg4:number):Promise<castapi.PlaybackState>;
 
@@ -87,11 +91,17 @@ export function RemoteDevices(arg1:string,arg2:string):Promise<Array<castapi.Rem
 
 export function RemoteDownload(arg1:string,arg2:string,arg3:string,arg4:string,arg5:number):Promise<castapi.DownloadStatus>;
 
+export function RemoteDownloads(arg1:string,arg2:string):Promise<Array<castapi.PageDownload>>;
+
+export function RemoteHistory(arg1:string,arg2:string):Promise<Array<castapi.HistoryItem>>;
+
 export function RemoteIdentify(arg1:string,arg2:string,arg3:castapi.LibraryScanResult):Promise<castapi.LibraryScanResult>;
 
 export function RemoteLibrary(arg1:string,arg2:string):Promise<Array<castapi.LibraryItem>>;
 
 export function RemoteLibraryTree(arg1:string,arg2:string):Promise<castapi.LibraryScanResult>;
+
+export function RemoteOpenPage(arg1:string,arg2:string,arg3:string):Promise<castapi.TrackDisplayInfo>;
 
 export function RemoteOrganizeExecute(arg1:string,arg2:string,arg3:Array<castapi.OrganizeMove>):Promise<void>;
 
@@ -101,11 +111,11 @@ export function RemotePing(arg1:string,arg2:string):Promise<boolean>;
 
 export function RemotePlay(arg1:string,arg2:string,arg3:string,arg4:string,arg5:castapi.PlayOptions):Promise<castapi.PlaybackState>;
 
+export function RemoteRemoveHistory(arg1:string,arg2:string,arg3:string):Promise<void>;
+
 export function RemoteSeasonCancel(arg1:string,arg2:string):Promise<void>;
 
 export function RemoteSeasonStatus(arg1:string,arg2:string):Promise<castapi.SeasonTranslateProgress>;
-
-export function RemoteSendExtracted(arg1:string,arg2:string,arg3:string):Promise<castapi.TrackDisplayInfo>;
 
 export function RemoteSetDownload(arg1:string,arg2:string,arg3:castapi.DownloadRequest):Promise<castapi.DownloadStatus>;
 
@@ -131,13 +141,11 @@ export function ScanLibrary(arg1:string):Promise<castapi.LibraryScanResult>;
 
 export function SeekTo(arg1:number):Promise<void>;
 
+export function SetDownload(arg1:castapi.DownloadRequest):Promise<castapi.DownloadStatus>;
+
 export function SetMuted(arg1:boolean):Promise<void>;
 
 export function SetVolume(arg1:number):Promise<void>;
-
-export function StartDownload(arg1:string,arg2:string,arg3:number):Promise<void>;
-
-export function StopDownload(arg1:string,arg2:string,arg3:number):Promise<void>;
 
 export function StopPlayback():Promise<void>;
 

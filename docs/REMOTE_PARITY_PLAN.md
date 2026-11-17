@@ -183,10 +183,11 @@ Things to check while building it:
 
 As built:
 
-- `RemoteSendExtracted` (desktop binding) extracts through the local
-  `RemoteManager` (the same cache a local cast fills), reads it back with
-  `CachedExtraction`, and posts it to `POST /extracted` when the Cast Options
-  panel opens. The server stores it with `RemoteManager.Seed` and answers the
+- `RemoteOpenPage` (desktop binding) asks the remote for the page's tracks
+  first; when it answers 409 (no script, no cached extraction) it extracts
+  through the local `RemoteManager` (the same cache a local cast fills),
+  reads it back with `CachedExtraction`, and posts it to `POST /extracted`
+  when the Cast Options panel opens. The server stores it with `RemoteManager.Seed` and answers the
   page's track info, so the panel shows the server's tracks and the cast is an
   ordinary `/play` (`TestExtractedPageCastsFromTheControllersExtraction`).
   Seed shares `storeExtraction` with server-side extraction, and it drops an
@@ -210,7 +211,7 @@ As built:
   cast will play (`RemoteManager.DropIfStale`); when it doesn't load, the
   page's cache folder is dropped and the controller extracts again
   (`TestPlayURLWithExpiredStreamNeedsExtraction`). A fully downloaded page
-  still plays offline. `RemoteSendExtracted` checks the controller's own
+  still plays offline. `RemoteOpenPage` checks the controller's own
   cache the same way before sending it, and `Seed` drops a page's cached
   track playlists when the resent links differ
   (`TestSeedWithNewLinksDropsCachedTrackPlaylists`).
@@ -235,17 +236,31 @@ panel does for a local cast.
   taller re-encodes), audio, subtitles and quality, each track with a
   download bar and button.
 
+## Phase 9: history, cache and downloads of the casting instance
+
+- `/history` (GET; DELETE `?path=` removes one, no path clears), `/cache`
+  (GET sizes; POST `{clear: transcoded|video|all}`) and `/downloads` (every
+  web page track in the instance's download list). History items carry
+  their cast options, so casting one again restores its tracks.
+- Clearing all cache stops downloads first, like the other two clears.
+- Desktop: `services/instance.ts` is the one way to an instance's history,
+  cache and downloads, this machine's by binding or a remote's by
+  `Remote*`. History and the Downloads panel follow the browsed source;
+  Cache management in Settings has its own instance picker. A remote
+  history entry is cast from that remote: a page through `RemoteOpenPage`
+  (the remote's extraction, else one made here), a file through the
+  episode path.
+- Phone: Library › History, the Downloads tab (torrents and page tracks)
+  and a cache card on Manage. The phone's own recent-pages list is gone;
+  the instance's history replaces it.
+
 ## Parity left
 
 What the desktop does that a controller still can't do on another instance:
 
-- Cache: stats, clearing transcoded or all video cache (`ClearCache`,
-  `GetCacheStats`, `Delete*Cache`).
-- History: list, replay, remove (`GetHistory`, `RemoveFromHistory`).
 - Settings beyond the subtitle style, quality and language `/settings` has.
 - Single-file subtitle tools: export embedded subtitles, the translation
   prompt and pasted translations.
-- The Downloads panel lists only downloads started from this controller.
 
 ## Testing
 

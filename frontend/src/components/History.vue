@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 import { useHistoryStore } from "../stores/history";
-import { Play, X } from "lucide-vue-next";
+import { Play, RefreshCw, X } from "lucide-vue-next";
 
 const emit = defineEmits<{
   select: [path: string];
@@ -66,14 +66,28 @@ const handleClearAll = async () => {
     >
       <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
         Recent Casts
+        <span
+          v-if="historyStore.source.kind === 'remote'"
+          class="text-sm font-normal text-gray-500"
+          >· {{ historyStore.source.name }}</span
+        >
       </h2>
-      <button
-        v-if="historyStore.hasHistory"
-        @click="handleClearAll"
-        class="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
-      >
-        Clear All
-      </button>
+      <div class="flex items-center gap-3">
+        <button
+          @click="historyStore.loadHistory()"
+          class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+          title="Refresh"
+        >
+          <RefreshCw class="h-4 w-4" />
+        </button>
+        <button
+          v-if="historyStore.hasHistory"
+          @click="handleClearAll"
+          class="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
+        >
+          Clear All
+        </button>
+      </div>
     </div>
 
     <div
@@ -81,6 +95,13 @@ const handleClearAll = async () => {
       class="flex-1 flex items-center justify-center p-8"
     >
       <p class="text-gray-500 dark:text-gray-400">Loading history...</p>
+    </div>
+
+    <div
+      v-else-if="historyStore.error"
+      class="flex-1 flex items-center justify-center p-8"
+    >
+      <p class="text-red-500">{{ historyStore.error }}</p>
     </div>
 
     <div

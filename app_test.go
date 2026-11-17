@@ -559,6 +559,63 @@ func TestDownloadFetchesAPageTrack(t *testing.T) {
 	}
 }
 
+// The downloads list names every page track downloaded since start, and the
+// history and cache endpoints read and clear this instance's.
+func TestDownloadsHistoryAndCacheEndpoints(t *testing.T) {
+	a, _ := newTestApp(t)
+	a.RemoteManager = remote.NewManager(true)
+	h := NewHTTPServer(a)
+	page := "https://example.test/watch/45/"
+	cdn, _ := expiringCDN(t)
+	seedPage(t, a, page, cdn.URL+"/tok/master.m3u8")
+	postJSON(t, h.handleDownload, "/download", castapi.DownloadRequest{URL: page, Type: "video", Track: 0, Start: true})
+
+	get := func(handler http.HandlerFunc, path string, out any) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		handler(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", path, rec.Code, rec.Body)
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var downloads castapi.DownloadsResponse
+	get(h.handleDownloads, "/downloads", &downloads)
+	if len(downloads.Items) != 1 || downloads.Items[0].URL != page || downloads.Items[0].Type != "video" || downloads.Items[0].Total != 1 {
+		t.Fatalf("downloads = %+v", downloads.Items)
+	}
+
+	a.historyStore.Add(page, "Film 45", &options.CastOptions{})
+	a.historyStore.Add("/media/show/e01.mkv", "E01", &options.CastOptions{})
+	var history castapi.HistoryResponse
+	get(h.handleHistory, "/history", &history)
+	if len(history.Items) < 2 || history.Items[0].Path != "/media/show/e01.mkv" || history.Items[1].Name != "Film 45" {
+		t.Fatalf("history = %+v", history.Items)
+	}
+	rec := httptest.NewRecorder()
+	h.handleHistory(rec, httptest.NewRequest(http.MethodDelete, "/history?path="+url.QueryEscape(page), nil))
+	get(h.handleHistory, "/history", &history)
+	for _, it := range history.Items {
+		if it.Path == page {
+			t.Fatalf("removed entry still listed: %+v", history.Items)
+		}
+	}
+
+	rec = postJSON(t, h.handleCache, "/cache", castapi.CacheClearRequest{Clear: castapi.CacheAll})
+	var stats castapi.CacheStats
+	if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
+		t.Fatal(err)
+	}
+	if stats.Total != 0 {
+		t.Fatalf("cache after clearing all = %+v", stats)
+	}
+	if got := a.RemoteManager.Downloads(); len(got) != 0 {
+		t.Fatalf("downloads after clearing the cache = %+v", got)
+	}
+}
+
 // expiringCDN serves an HLS stream whose segments answer 403 once expired.
 func expiringCDN(t *testing.T) (cdn *httptest.Server, expired *bool) {
 	expired = new(bool)

@@ -56,46 +56,44 @@
           No downloads
         </div>
 
+        <div
+          v-if="entries.length"
+          class="text-xs uppercase tracking-wider text-gray-500 mb-2"
+        >
+          Web pages — {{ libraryStore.browseSource.name }}
+        </div>
         <ul>
           <li
             v-for="item in entries"
-            :key="item.URL + '|' + item.MediaType + '|' + item.Track"
+            :key="item.url + '|' + item.type + '|' + item.track"
             class="mb-4 border-b pb-2 flex flex-col gap-2"
           >
-            <div class="flex-1">
-              <div class="text-sm font-medium">{{ item.URL }}</div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium truncate">
+                {{ item.title || item.url }}
+              </div>
               <div class="text-xs text-gray-500">
-                {{ item.MediaType }} • Track {{ item.Track }}
+                {{ item.type }} • Track {{ item.track }} • {{ item.done }} of
+                {{ item.total }} segments • {{ statusLabel(item.status) }}
               </div>
             </div>
 
-            <ProgressBar
-              :progress="item.Done"
-              :total="item.Total"
-              class="flex-1"
-            />
-            
+            <ProgressBar :progress="item.done" :total="item.total" class="flex-1" />
+
             <div class="flex gap-2">
               <button
-                v-if="item.Status === 'STOPPED'"
-                @click.stop="start(item)"
+                v-if="item.status === 'STOPPED' || item.status === 'ERROR'"
+                @click.stop="setDownload(item, true)"
                 class="btn-primary"
               >
                 <Play></Play>
               </button>
               <button
-                v-if="item.Status === 'INPROGRESS'"
-                @click.stop="stop(item)"
+                v-if="item.status === 'INPROGRESS'"
+                @click.stop="setDownload(item, false)"
                 class="btn-primary"
               >
                 <Square></Square>
-              </button>
-              <button
-                v-if="item.Status !== 'INPROGRESS'"
-                @click.stop="item.Status = 'IDLE'"
-                class="btn-secondary text-sm"
-              >
-                <Trash></Trash>
               </button>
             </div>
           </li>
@@ -106,21 +104,55 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from "vue";
-import { useDownloadsStore } from "@/stores/downloads";
+import { computed, onUnmounted, ref, watch } from "vue";
 import { useLibraryStore } from "@/stores/library";
+import { instanceService } from "@/services/instance";
+import { castapi } from "../../wailsjs/go/models";
 import ProgressBar from "./ProgressBar.vue";
-import { Play, Square, Trash } from "lucide-vue-next";
+import { Play, Square } from "lucide-vue-next";
 
-const store = useDownloadsStore();
 const libraryStore = useLibraryStore();
 const modelValue = defineModel<boolean>();
 
-const entries = computed(() =>
-  Object.values(store.downloads).filter(
-    (d) => d.Status !== "COMPLETED" && d.Status !== "IDLE"
-  )
+// Every web page track the browsed instance has downloaded or is
+// downloading, polled while the panel is open.
+const entries = ref<castapi.PageDownload[]>([]);
+let timer: number | undefined;
+
+const load = async () => {
+  entries.value = await instanceService.downloads(libraryStore.browseSource);
+};
+
+watch(
+  [modelValue, () => libraryStore.browseSource],
+  ([open]) => {
+    window.clearInterval(timer);
+    timer = undefined;
+    if (!open) return;
+    load();
+    timer = window.setInterval(load, 2000);
+  },
+  { immediate: true }
 );
+onUnmounted(() => window.clearInterval(timer));
+
+const setDownload = async (item: castapi.PageDownload, start: boolean) => {
+  await instanceService.setDownload(libraryStore.browseSource, {
+    url: item.url,
+    type: item.type,
+    track: item.track,
+    start,
+  });
+  await load();
+};
+
+const statusLabel = (status: string) =>
+  ({
+    INPROGRESS: "downloading",
+    COMPLETED: "done",
+    STOPPED: "stopped",
+    ERROR: "failed",
+  })[status] || status.toLowerCase();
 
 const torrents = computed(() => libraryStore.torrents);
 
@@ -135,14 +167,6 @@ function fmtBytes(n: number): string {
   }
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`;
 }
-
-const start = (item: any) => {
-  store.startDownload(item.URL, item.MediaType, item.Track);
-};
-
-const stop = (item: any) => {
-  store.stopDownload(item.URL, item.MediaType, item.Track);
-};
 </script>
 
 <style scoped>

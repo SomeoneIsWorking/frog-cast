@@ -189,7 +189,9 @@ func emptyState(icon fyne.Resource, title, hint string) fyne.CanvasObject {
 	t.SizeName = theme.SizeNameSubHeadingText
 	h := note(hint)
 	h.Alignment = fyne.TextAlignCenter
-	return container.NewCenter(container.NewVBox(container.NewCenter(mark), t, h))
+	h.Wrapping = fyne.TextWrapWord
+	// A full-width column, so the hint wraps instead of running off screen.
+	return container.NewVBox(layout.NewSpacer(), container.NewCenter(mark), t, h, layout.NewSpacer())
 }
 
 // navTabs is the bottom navigation: one page per item, the chosen item

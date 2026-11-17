@@ -19,6 +19,6 @@ func (u *ui) takeShare() {
 	if u.pendingShare != "" && u.session != nil {
 		link := u.pendingShare
 		u.pendingShare = ""
-		u.session.web.share(link)
+		u.session.web.show(link)
 	}
 }

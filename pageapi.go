@@ -95,24 +95,29 @@ func (h *HTTPServer) handleDownload(w http.ResponseWriter, r *http.Request) {
 	if !h.readyWebPage(w, req.URL) {
 		return
 	}
+	var status *castapi.DownloadStatus
+	var err error
 	if r.Method == http.MethodPost {
-		var err error
-		if req.Start {
-			err = h.app.StartDownload(req.URL, req.Type, req.Track)
-		} else {
-			err = h.app.StopDownload(req.URL, req.Type, req.Track)
-		}
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
-			return
-		}
+		status, err = h.app.SetDownload(req)
+	} else {
+		status, err = h.app.Download(req.URL, req.Type, req.Track)
 	}
-	status, err := h.app.GetDownloadStatus(req.URL, req.Type, req.Track)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, downloadStatus(status))
+	writeJSON(w, http.StatusOK, status)
+}
+
+// handleDownloads lists the page tracks this instance has downloaded or is
+// downloading.
+// GET /downloads → castapi.DownloadsResponse
+func (h *HTTPServer) handleDownloads(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, errorResponse{Error: "method not allowed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, castapi.DownloadsResponse{Items: h.app.Downloads()})
 }
 
 func downloadStatus(s *remote.DownloadStatusQeuryResponse) castapi.DownloadStatus {

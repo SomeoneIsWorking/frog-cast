@@ -294,3 +294,50 @@ func (c *Client) Download(pageURL, kind string, track int) (*DownloadStatus, err
 	}
 	return &status, nil
 }
+
+// Downloads lists the web page tracks the instance has downloaded or is
+// downloading.
+func (c *Client) Downloads() ([]PageDownload, error) {
+	var resp DownloadsResponse
+	if err := c.do(http.MethodGet, "/downloads", nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
+}
+
+// History lists what the instance has cast, newest first.
+func (c *Client) History() ([]HistoryItem, error) {
+	var resp HistoryResponse
+	if err := c.do(http.MethodGet, "/history", nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
+}
+
+// RemoveHistory removes one entry from the instance's history; "" clears it.
+func (c *Client) RemoveHistory(path string) error {
+	q := ""
+	if path != "" {
+		q = "?" + url.Values{"path": {path}}.Encode()
+	}
+	return c.do(http.MethodDelete, "/history"+q, nil, nil)
+}
+
+// CacheStats reports the instance's media cache.
+func (c *Client) CacheStats() (*CacheStats, error) {
+	var stats CacheStats
+	if err := c.do(http.MethodGet, "/cache", nil, &stats); err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+// ClearCache clears part of the instance's media cache (CacheTranscoded,
+// CacheVideo or CacheAll) and reports what is left.
+func (c *Client) ClearCache(part string) (*CacheStats, error) {
+	var stats CacheStats
+	if err := c.do(http.MethodPost, "/cache", CacheClearRequest{Clear: part}, &stats); err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}

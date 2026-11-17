@@ -587,13 +587,35 @@ func (a *App) UpdateSubtitleSettings(opts options.SubtitleCastOptions) error {
 	return a.App.SeekToTime(float32(position))
 }
 
+// ClearCache removes the whole media cache, stopping downloads into it first.
 func (a *App) ClearCache() error {
+	if err := a.RemoteManager.StopAllAndClear(); err != nil {
+		return err
+	}
 	return folders.DeleteAllCache()
 }
 
-// GetCacheStats returns cache statistics
-func (a *App) GetCacheStats() (*folders.CacheStats, error) {
-	return folders.GetCacheStats()
+// GetCacheStats reports the media cache's size by part.
+func (a *App) GetCacheStats() (*castapi.CacheStats, error) {
+	stats, err := folders.GetCacheStats()
+	if err != nil {
+		return nil, err
+	}
+	return &castapi.CacheStats{
+		Total: stats.TotalSize, Transcoded: stats.TranscodedSize, RawSegments: stats.RawSegmentsSize, Metadata: stats.MetadataSize,
+	}, nil
+}
+
+// Downloads lists the web page tracks downloaded or downloading since start.
+func (a *App) Downloads() []castapi.PageDownload {
+	items := []castapi.PageDownload{}
+	for _, d := range a.RemoteManager.Downloads() {
+		items = append(items, castapi.PageDownload{
+			URL: d.URL, Title: d.Title, Type: d.Type, Track: d.Track,
+			DownloadStatus: downloadStatus(&remote.DownloadStatusQeuryResponse{Status: d.Status, Segments: d.Segments}),
+		})
+	}
+	return items
 }
 
 // DeleteTranscodedCache removes only transcoded video segments
@@ -624,17 +646,29 @@ func (a *App) Export() AppExports {
 	panic("DO NOT CALL")
 }
 
-func (a *App) StartDownload(url string, mediaType string, index int) error {
-	return a.RemoteManager.StartDownload(url, mediaType, index)
+// SetDownload starts or stops downloading one track of a web page into the
+// cache, and reports it.
+func (a *App) SetDownload(req castapi.DownloadRequest) (*castapi.DownloadStatus, error) {
+	var err error
+	if req.Start {
+		err = a.RemoteManager.StartDownload(req.URL, req.Type, req.Track)
+	} else {
+		err = a.RemoteManager.StopDownload(req.URL, req.Type, req.Track)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return a.Download(req.URL, req.Type, req.Track)
 }
 
-func (a *App) StopDownload(url string, mediaType string, index int) error {
-	return a.RemoteManager.StopDownload(url, mediaType, index)
-}
-
-// GetDownloadStatus returns the current download progress for a specific track
-func (a *App) GetDownloadStatus(url string, mediaType string, track int) (*remote.DownloadStatusQeuryResponse, error) {
-	return a.RemoteManager.GetDownloadStatus(url, mediaType, track)
+// Download reports one web page track's download into the cache.
+func (a *App) Download(pageURL, kind string, track int) (*castapi.DownloadStatus, error) {
+	status, err := a.RemoteManager.GetDownloadStatus(pageURL, kind, track)
+	if err != nil {
+		return nil, err
+	}
+	out := downloadStatus(status)
+	return &out, nil
 }
 
 // Pause pauses current playback

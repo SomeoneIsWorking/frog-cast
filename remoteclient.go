@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -109,11 +110,21 @@ func (a *App) RemoteChangeTracks(base, token string, change TrackChange) (*Playb
 	return castapi.New(base, token).ChangeTracks(change)
 }
 
-// RemoteSendExtracted gives another instance a web page extracted here, in
-// this machine's browser where someone can click play on a site without a
-// script, and returns the page's tracks as that instance has them. The page
-// is then cast with RemotePlay.
-func (a *App) RemoteSendExtracted(base, token, pageURL string) (*TrackDisplayInfo, error) {
+// RemoteOpenPage returns a web page's tracks as another instance has them,
+// to cast it there with RemotePlay: from its own extraction when it has one
+// or a script for the page, else from one made here and sent to it.
+func (a *App) RemoteOpenPage(base, token, pageURL string) (*TrackDisplayInfo, error) {
+	info, err := castapi.New(base, token).TrackInfo(pageURL)
+	if errors.Is(err, castapi.ErrNeedsExtraction) {
+		return a.sendExtracted(base, token, pageURL)
+	}
+	return info, err
+}
+
+// sendExtracted gives another instance a web page extracted here, in this
+// machine's browser where someone can click play on a site without a
+// script, and returns the page's tracks as that instance has them.
+func (a *App) sendExtracted(base, token, pageURL string) (*TrackDisplayInfo, error) {
 	if !isWebURL(pageURL) {
 		return nil, fmt.Errorf("not a web page: %s", pageURL)
 	}
@@ -154,4 +165,31 @@ func (a *App) RemoteSetDownload(base, token string, req castapi.DownloadRequest)
 // RemoteDownload reports a web page track's download on another instance.
 func (a *App) RemoteDownload(base, token, pageURL, kind string, track int) (*castapi.DownloadStatus, error) {
 	return castapi.New(base, token).Download(pageURL, kind, track)
+}
+
+// RemoteDownloads lists the web page tracks another instance has downloaded
+// or is downloading.
+func (a *App) RemoteDownloads(base, token string) ([]castapi.PageDownload, error) {
+	return castapi.New(base, token).Downloads()
+}
+
+// RemoteHistory lists what another instance has cast, newest first.
+func (a *App) RemoteHistory(base, token string) ([]castapi.HistoryItem, error) {
+	return castapi.New(base, token).History()
+}
+
+// RemoteRemoveHistory removes one entry from another instance's history; ""
+// clears it.
+func (a *App) RemoteRemoveHistory(base, token, path string) error {
+	return castapi.New(base, token).RemoveHistory(path)
+}
+
+// RemoteCacheStats reports another instance's media cache.
+func (a *App) RemoteCacheStats(base, token string) (*castapi.CacheStats, error) {
+	return castapi.New(base, token).CacheStats()
+}
+
+// RemoteClearCache clears part of another instance's media cache.
+func (a *App) RemoteClearCache(base, token, part string) (*castapi.CacheStats, error) {
+	return castapi.New(base, token).ClearCache(part)
 }

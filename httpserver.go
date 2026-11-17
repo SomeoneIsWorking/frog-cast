@@ -14,6 +14,9 @@ package main
 //   POST /play-url      – play an arbitrary URL (+ track/subtitle/quality)
 //   POST /extracted     – store a web page a controller extracted; returns its tracks
 //   GET/POST /download  – a web page track's segment download: status, start/stop
+//   GET  /downloads     – every web page track downloaded or downloading
+//   GET/DELETE /history – what this instance cast; remove one or all
+//   GET/POST /cache     – media cache sizes; clear transcoded, video or all
 //   POST /control       – transport: pause/resume/stop/seek/volume/mute
 //   POST /tracks        – switch the running cast's tracks/quality/subtitle source
 //   POST /translate     – start a subtitle translation for a media item
@@ -208,6 +211,9 @@ func (h *HTTPServer) Start(port int) error {
 	mux.HandleFunc("/play-url", h.handlePlayURL)
 	mux.HandleFunc("/extracted", h.handleExtracted)
 	mux.HandleFunc("/download", h.handleDownload)
+	mux.HandleFunc("/downloads", h.handleDownloads)
+	mux.HandleFunc("/history", h.handleHistory)
+	mux.HandleFunc("/cache", h.handleCache)
 	mux.HandleFunc("/control", h.handleControl)
 	mux.HandleFunc("/translate", h.handleTranslate)
 	mux.HandleFunc("/translate-status", h.handleTranslateStatus)

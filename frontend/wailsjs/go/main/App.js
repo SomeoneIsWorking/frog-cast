@@ -46,6 +46,14 @@ export function DiscoverDevices() {
   return window['go']['main']['App']['DiscoverDevices']();
 }
 
+export function Download(arg1, arg2, arg3) {
+  return window['go']['main']['App']['Download'](arg1, arg2, arg3);
+}
+
+export function Downloads() {
+  return window['go']['main']['App']['Downloads']();
+}
+
 export function Export() {
   return window['go']['main']['App']['Export']();
 }
@@ -60,10 +68,6 @@ export function GenerateTranslationPrompt(arg1, arg2) {
 
 export function GetCacheStats() {
   return window['go']['main']['App']['GetCacheStats']();
-}
-
-export function GetDownloadStatus(arg1, arg2, arg3) {
-  return window['go']['main']['App']['GetDownloadStatus'](arg1, arg2, arg3);
 }
 
 export function GetFFmpegInfo(arg1) {
@@ -146,8 +150,16 @@ export function RemoteAddTorrent(arg1, arg2, arg3) {
   return window['go']['main']['App']['RemoteAddTorrent'](arg1, arg2, arg3);
 }
 
+export function RemoteCacheStats(arg1, arg2) {
+  return window['go']['main']['App']['RemoteCacheStats'](arg1, arg2);
+}
+
 export function RemoteChangeTracks(arg1, arg2, arg3) {
   return window['go']['main']['App']['RemoteChangeTracks'](arg1, arg2, arg3);
+}
+
+export function RemoteClearCache(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RemoteClearCache'](arg1, arg2, arg3);
 }
 
 export function RemoteControl(arg1, arg2, arg3, arg4) {
@@ -162,6 +174,14 @@ export function RemoteDownload(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['RemoteDownload'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function RemoteDownloads(arg1, arg2) {
+  return window['go']['main']['App']['RemoteDownloads'](arg1, arg2);
+}
+
+export function RemoteHistory(arg1, arg2) {
+  return window['go']['main']['App']['RemoteHistory'](arg1, arg2);
+}
+
 export function RemoteIdentify(arg1, arg2, arg3) {
   return window['go']['main']['App']['RemoteIdentify'](arg1, arg2, arg3);
 }
@@ -172,6 +192,10 @@ export function RemoteLibrary(arg1, arg2) {
 
 export function RemoteLibraryTree(arg1, arg2) {
   return window['go']['main']['App']['RemoteLibraryTree'](arg1, arg2);
+}
+
+export function RemoteOpenPage(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RemoteOpenPage'](arg1, arg2, arg3);
 }
 
 export function RemoteOrganizeExecute(arg1, arg2, arg3) {
@@ -190,16 +214,16 @@ export function RemotePlay(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['RemotePlay'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function RemoteRemoveHistory(arg1, arg2, arg3) {
+  return window['go']['main']['App']['RemoteRemoveHistory'](arg1, arg2, arg3);
+}
+
 export function RemoteSeasonCancel(arg1, arg2) {
   return window['go']['main']['App']['RemoteSeasonCancel'](arg1, arg2);
 }
 
 export function RemoteSeasonStatus(arg1, arg2) {
   return window['go']['main']['App']['RemoteSeasonStatus'](arg1, arg2);
-}
-
-export function RemoteSendExtracted(arg1, arg2, arg3) {
-  return window['go']['main']['App']['RemoteSendExtracted'](arg1, arg2, arg3);
 }
 
 export function RemoteSetDownload(arg1, arg2, arg3) {
@@ -250,20 +274,16 @@ export function SeekTo(arg1) {
   return window['go']['main']['App']['SeekTo'](arg1);
 }
 
+export function SetDownload(arg1) {
+  return window['go']['main']['App']['SetDownload'](arg1);
+}
+
 export function SetMuted(arg1) {
   return window['go']['main']['App']['SetMuted'](arg1);
 }
 
 export function SetVolume(arg1) {
   return window['go']['main']['App']['SetVolume'](arg1);
-}
-
-export function StartDownload(arg1, arg2, arg3) {
-  return window['go']['main']['App']['StartDownload'](arg1, arg2, arg3);
-}
-
-export function StopDownload(arg1, arg2, arg3) {
-  return window['go']['main']['App']['StopDownload'](arg1, arg2, arg3);
 }
 
 export function StopPlayback() {

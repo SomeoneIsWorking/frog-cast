@@ -47,8 +47,11 @@ The launcher icon is the desktop app's (`build/appicon.png`).
 - **Library**: shows, then seasons, then episodes, from the instance's library
   tree. An episode opens the play sheet: cast target (remembered), audio,
   subtitles (the file beside the episode is picked by default) and quality.
+- **History** (from Library): what the instance has cast, newest first.
+  A file opens its play sheet, a page its Cast options; remove one or clear
+  all.
 - **Web page** (from Library, or Share › Frog Cast Remote in a browser): cast
-  a page link; recent pages are kept on the phone. Opening a page shows its
+  a page link. Opening a page shows its
   **Cast options**: target, video (the tallest variant up to 1080p is picked
   first, since every variant is re-encoded at its own size and many TVs
   refuse more), audio, subtitles and quality, with a download bar and button
@@ -65,6 +68,8 @@ The launcher icon is the desktop app's (`build/appicon.png`).
   and style live; **Tracks** switches video, quality, audio and subtitle
   source (the TV reloads at the same spot). Opens here when something is
   already playing.
-- **Torrents**: add a magnet link; downloads with progress.
-- **Manage**: rescan, identify shows on TMDB, organize files (with a preview),
+- **Downloads**: the instance's torrents (add a magnet link) and its web page
+  track downloads, with progress; a page track can be stopped or resumed.
+- **Manage**: the instance's media cache size, clearing transcoded
+  segments, all video or everything (each confirmed); rescan, identify shows on TMDB, organize files (with a preview),
   and translate a season's subtitles with progress and cancel.

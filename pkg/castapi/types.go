@@ -1,5 +1,7 @@
 package castapi
 
+import "frog-cast/pkg/options"
+
 // CastInstance is a frog-cast instance discovered on the LAN over mDNS.
 type CastInstance struct {
 	Name string `json:"name"`
@@ -244,4 +246,59 @@ type DownloadStatus struct {
 	Status string `json:"status"`
 	Done   int    `json:"done"`
 	Total  int    `json:"total"`
+}
+
+// OKResponse acknowledges a request that returns nothing else.
+type OKResponse struct {
+	OK bool `json:"ok"`
+}
+
+// HistoryItem is one media an instance cast: a library file path or a web
+// page URL, as passed back to /track-info and /play.
+type HistoryItem struct {
+	Path      string `json:"path"`
+	Name      string `json:"name"`
+	Timestamp string `json:"timestamp"` // RFC 3339
+	// CastOptions are the tracks it was last cast with.
+	CastOptions *options.CastOptions `json:"castOptions,omitempty"`
+}
+
+// HistoryResponse is GET /history, newest first.
+type HistoryResponse struct {
+	Items []HistoryItem `json:"items"`
+}
+
+// Cache parts POST /cache clears.
+const (
+	CacheTranscoded = "transcoded" // re-encoded segments
+	CacheVideo      = "video"      // re-encoded and downloaded segments
+	CacheAll        = "all"        // everything, extractions included
+)
+
+// CacheClearRequest is the body of POST /cache.
+type CacheClearRequest struct {
+	Clear string `json:"clear"`
+}
+
+// CacheStats is an instance's media cache, in bytes.
+type CacheStats struct {
+	Total       int64 `json:"total"`
+	Transcoded  int64 `json:"transcoded"`
+	RawSegments int64 `json:"rawSegments"`
+	Metadata    int64 `json:"metadata"`
+}
+
+// PageDownload is one web page track an instance has downloaded or is
+// downloading since it started.
+type PageDownload struct {
+	URL   string `json:"url"`
+	Title string `json:"title"`
+	Type  string `json:"type"` // video or audio
+	Track int    `json:"track"`
+	DownloadStatus
+}
+
+// DownloadsResponse is GET /downloads.
+type DownloadsResponse struct {
+	Items []PageDownload `json:"items"`
 }

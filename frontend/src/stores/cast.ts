@@ -288,20 +288,31 @@ export const useCastStore = defineStore("cast", () => {
   const prepareFromThisMachine = async (path: string) => {
     const source =
       isWebUrl(path) && isRemoteActive() ? activeSource.value : LOCAL_SOURCE;
-    if (source.kind === "remote") {
-      const { RemoteSendExtracted } = await import("../../wailsjs/go/main/App");
-      const [info] = await Promise.all([
-        RemoteSendExtracted(source.base, source.token, path),
-        loadRemoteTargets(source),
-      ]);
-      optionsSource.value = source;
-      setTrackInfo(info);
-      return;
-    }
+    if (source.kind === "remote") return await preparePage(path, source);
     const { GetTrackDisplayInfo } = await import("../../wailsjs/go/main/App");
     const info = await GetTrackDisplayInfo(path);
     optionsSource.value = source;
     setTrackInfo(info);
+  };
+
+  // preparePage readies a web page to cast from a remote: its tracks as the
+  // remote has them, extracted here and sent when it can't extract the page.
+  const preparePage = async (path: string, source: Source) => {
+    const { RemoteOpenPage } = await import("../../wailsjs/go/main/App");
+    const [info] = await Promise.all([
+      RemoteOpenPage(source.base, source.token, path),
+      loadRemoteTargets(source),
+    ]);
+    optionsSource.value = source;
+    setTrackInfo(info);
+  };
+
+  // prepareHistoryItem readies an entry of a source's history to cast again
+  // from that source.
+  const prepareHistoryItem = async (path: string, source: Source) => {
+    if (source.kind === "local") return await prepareFromThisMachine(path);
+    if (isWebUrl(path)) return await preparePage(path, source);
+    return await prepareEpisode(path, source);
   };
 
   // loadRemoteTargets lists a remote's cast targets for the Cast Options
@@ -351,6 +362,8 @@ export const useCastStore = defineStore("cast", () => {
       activeSource.value = s;
       startStatePoll();
       lastRemotePosition = playbackState.value.currentTime;
+      // Only this machine's history updates by event.
+      if (historyStore.source.base === s.base) historyStore.loadHistory();
     } else {
       if (!selectedDevice.value) return;
       stopStatePoll();
@@ -469,6 +482,7 @@ export const useCastStore = defineStore("cast", () => {
     prepareEpisode,
     prepareFromThisMachine,
     optionsSource,
+    prepareHistoryItem,
     startCasting,
     checkFFmpeg,
     updateLiveSubtitleSettings,

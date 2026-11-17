@@ -7,15 +7,15 @@
           @click="start"
           :disabled="loading"
           v-if="
-            downloadState?.Status === 'IDLE' ||
-            downloadState?.Status === 'STOPPED'
+            downloadState?.status === 'IDLE' ||
+            downloadState?.status === 'STOPPED'
           "
           class="btn-secondary px-3"
         >
           <Download class="w-4 h-4" />
         </button>
         <button
-          v-else-if="downloadState?.Status === 'INPROGRESS'"
+          v-else-if="downloadState?.status === 'INPROGRESS'"
           @click="stop"
           :disabled="loading"
           class="btn-secondary px-3"
@@ -29,8 +29,8 @@
       <ProgressBar
         class="mt-2"
         v-if="isRemote"
-        :progress="downloadState?.Done || 0"
-        :total="downloadState?.Total || 0"
+        :progress="downloadState?.done || 0"
+        :total="downloadState?.total || 0"
       />
     </div>
   </template>

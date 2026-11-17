@@ -15,7 +15,7 @@ import (
 const (
 	tabLibrary = iota
 	tabPlaying
-	tabTorrents
+	tabDownloads
 	tabManage
 )
 
@@ -26,12 +26,13 @@ type session struct {
 	client  *castapi.Client
 	targets *targetPicker
 
-	tabs     *navTabs
-	library  *libraryView
-	web      *webView
-	playing  *nowPlaying
-	torrents *torrentsView
-	manage   *manageView
+	tabs      *navTabs
+	library   *libraryView
+	web       *webView
+	history   *historyView
+	playing   *nowPlaying
+	downloads *downloadsView
+	manage    *manageView
 }
 
 func (u *ui) openSession(name string, client *castapi.Client) {
@@ -40,14 +41,15 @@ func (u *ui) openSession(name string, client *castapi.Client) {
 	s.targets = newTargetPicker(s)
 	s.library = newLibraryView(s)
 	s.web = newWebView(s)
+	s.history = newHistoryView(s)
 	s.playing = newNowPlaying(s)
-	s.torrents = newTorrentsView(s)
+	s.downloads = newDownloadsView(s)
 	s.manage = newManageView(s)
 
 	s.tabs = newNavTabs(
 		navTab{"Library", theme.ListIcon(), s.library.content},
 		navTab{"Playing", theme.MediaPlayIcon(), s.playing.content},
-		navTab{"Torrents", theme.DownloadIcon(), s.torrents.content},
+		navTab{"Downloads", theme.DownloadIcon(), s.downloads.content},
 		navTab{"Manage", theme.SettingsIcon(), s.manage.content},
 	)
 	s.tabs.OnSelected = func(int) { s.pollVisibleTab() }
@@ -100,11 +102,14 @@ func (s *session) showPlaying() {
 func (s *session) pollVisibleTab() {
 	selected := s.tabs.Selected()
 	s.playing.setPolling(selected == tabPlaying)
-	s.torrents.setPolling(selected == tabTorrents)
+	s.downloads.setPolling(selected == tabDownloads)
+	if selected == tabManage {
+		s.manage.cache.load()
+	}
 }
 
 func (s *session) close() {
 	s.playing.setPolling(false)
-	s.torrents.setPolling(false)
+	s.downloads.setPolling(false)
 	s.manage.stopSeasonPoll()
 }

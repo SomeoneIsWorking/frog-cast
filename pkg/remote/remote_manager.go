@@ -1,11 +1,14 @@
 package remote
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	u "net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"frog-cast/pkg/extractor"
 	"frog-cast/pkg/filehelper"
@@ -75,6 +78,38 @@ func NewManager(cache bool) *RemoteManager {
 		items: make(map[string]*MediaManager),
 		Cache: cache,
 	}
+}
+
+// TrackDownload is a page track that has downloaded segments or is
+// downloading them.
+type TrackDownload struct {
+	URL      string
+	Title    string
+	Type     string
+	Track    int
+	Status   string
+	Segments []bool
+}
+
+// Downloads lists the page tracks downloaded or downloading since this
+// instance started, by page then track.
+func (m *RemoteManager) Downloads() []TrackDownload {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []TrackDownload
+	for _, media := range m.items {
+		for _, t := range media.Items {
+			status := t.GetDownloadStatus()
+			if status.Status == "IDLE" || status.Status == "" {
+				continue
+			}
+			out = append(out, TrackDownload{URL: media.URL, Title: media.Title, Type: t.TrackType, Track: t.TrackIndex, Status: status.Status, Segments: status.Segments})
+		}
+	}
+	slices.SortFunc(out, func(a, b TrackDownload) int {
+		return cmp.Or(strings.Compare(a.URL, b.URL), strings.Compare(a.Type, b.Type), a.Track-b.Track)
+	})
+	return out
 }
 
 func (m *RemoteManager) StopAllAndClear() error {

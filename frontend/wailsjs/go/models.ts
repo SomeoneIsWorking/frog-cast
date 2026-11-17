@@ -4,6 +4,12 @@ export namespace castapi {
 	    Index: number;
 	    Language: string;
 	}
+	export interface CacheStats {
+	    total: number;
+	    transcoded: number;
+	    rawSegments: number;
+	    metadata: number;
+	}
 	export interface CastInstance {
 	    name: string;
 	    host: string;
@@ -32,6 +38,12 @@ export namespace castapi {
 	    status: string;
 	    done: number;
 	    total: number;
+	}
+	export interface HistoryItem {
+	    path: string;
+	    name: string;
+	    timestamp: string;
+	    castOptions?: options.CastOptions;
 	}
 	export interface LibraryEpisode {
 	    path: string;
@@ -75,6 +87,15 @@ export namespace castapi {
 	    srcSubDir: string;
 	    dstSubDir: string;
 	    description: string;
+	}
+	export interface PageDownload {
+	    url: string;
+	    title: string;
+	    type: string;
+	    track: number;
+	    status: string;
+	    done: number;
+	    total: number;
 	}
 	export interface SubtitleStyle {
 	    fontSize: number;
@@ -166,17 +187,6 @@ export namespace ffmpeg {
 
 }
 
-export namespace folders {
-	
-	export interface CacheStats {
-	    totalSize: number;
-	    transcodedSize: number;
-	    rawSegmentsSize: number;
-	    metadataSize: number;
-	}
-
-}
-
 export namespace main {
 	
 	export interface AppExports {
@@ -261,10 +271,6 @@ export namespace remote {
 	    URL: string;
 	    MediaType: string;
 	    Track: number;
-	}
-	export interface DownloadStatusQeuryResponse {
-	    Status: string;
-	    Segments: boolean[];
 	}
 
 }
