@@ -257,30 +257,48 @@ export const useCastStore = defineStore("cast", () => {
     await deviceService.discoverDevices();
   };
 
-  // prepareEpisode loads track info for an item from a given source, sets it as
-  // the active playback source, and (for remote sources) loads that source's
-  // cast targets. The UI then shows Cast Options to start playback.
+  // The source that casts the item in the Cast Options panel. Playback moves
+  // to it (activeSource) only when that item is cast.
+  const optionsSource = ref<Source>(LOCAL_SOURCE);
+
+  // prepareEpisode loads track info for a library item of a given source and,
+  // for a remote source, its cast targets. The UI then shows Cast Options.
   const prepareEpisode = async (path: string, source: Source) => {
-    activeSource.value = source;
     if (source.kind === "remote") {
       const { RemoteTrackInfo } = await import("../../wailsjs/go/main/App");
       const [info] = await Promise.all([
         RemoteTrackInfo(source.base, source.token, path),
-        loadRemoteTargets(),
+        loadRemoteTargets(source),
       ]);
+      optionsSource.value = source;
       setTrackInfo(info);
     } else {
       const { GetTrackDisplayInfo } = await import("../../wailsjs/go/main/App");
-      setTrackInfo(await GetTrackDisplayInfo(path));
+      const info = await GetTrackDisplayInfo(path);
+      optionsSource.value = source;
+      setTrackInfo(info);
     }
   };
 
-  // loadRemoteTargets lists the active remote's cast targets for the Cast
-  // Options panel, defaulting to its first real device (Chromecast), else the
-  // remote itself.
-  const loadRemoteTargets = async () => {
+  // prepareFromThisMachine readies a file or web page picked on this machine.
+  // A file is always cast from here. A web page is extracted here (a site
+  // without a script opens its browser on this screen) and cast by the
+  // remote that is playing, if any.
+  const prepareFromThisMachine = async (path: string) => {
+    const { GetTrackDisplayInfo } = await import("../../wailsjs/go/main/App");
+    const info = await GetTrackDisplayInfo(path);
+    const source =
+      isWebUrl(path) && isRemoteActive() ? activeSource.value : LOCAL_SOURCE;
+    if (source.kind === "remote") await loadRemoteTargets(source);
+    optionsSource.value = source;
+    setTrackInfo(info);
+  };
+
+  // loadRemoteTargets lists a remote's cast targets for the Cast Options
+  // panel, defaulting to its first real device (Chromecast), else the remote
+  // itself.
+  const loadRemoteTargets = async (s: Source) => {
     const { RemoteDevices } = await import("../../wailsjs/go/main/App");
-    const s = activeSource.value;
     const devs = await RemoteDevices(s.base, s.token);
     remoteDevices.value = devs;
     const def = devs.find((d) => d.host !== "local") || devs[0];
@@ -296,11 +314,11 @@ export const useCastStore = defineStore("cast", () => {
       castOptions.value.SubtitlePath
     );
 
-    if (isRemoteActive()) {
+    const s = optionsSource.value;
+    if (s.kind === "remote") {
       const { RemotePlay, RemotePlayExtracted } = await import(
         "../../wailsjs/go/main/App"
       );
-      const s = activeSource.value;
       // A web page is extracted here, in this machine's browser, and the
       // remote casts the result; a library item is the remote's own file.
       const play = isWebUrl(media) ? RemotePlayExtracted : RemotePlay;
@@ -325,10 +343,13 @@ export const useCastStore = defineStore("cast", () => {
             : undefined,
         }
       );
+      activeSource.value = s;
       startStatePoll();
       lastRemotePosition = playbackState.value.currentTime;
     } else {
       if (!selectedDevice.value) return;
+      stopStatePoll();
+      activeSource.value = LOCAL_SOURCE;
       const backendOptions: options.CastOptions = {
         VideoTrack: castOptions.value.VideoTrack,
         AudioTrack: castOptions.value.AudioTrack,
@@ -441,7 +462,8 @@ export const useCastStore = defineStore("cast", () => {
     discoverDevices,
     attachToRemotePlayback,
     prepareEpisode,
-    loadRemoteTargets,
+    prepareFromThisMachine,
+    optionsSource,
     startCasting,
     checkFFmpeg,
     updateLiveSubtitleSettings,

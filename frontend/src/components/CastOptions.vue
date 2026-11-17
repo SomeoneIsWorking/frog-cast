@@ -10,14 +10,13 @@ import FileSelector from "./FileSelector.vue";
 import { qualityOptions } from "@/data/qualityOptions";
 import { OpenMediaFolder } from "../../wailsjs/go/main/App";
 import TrackDownloader from "./TrackDownloader.vue";
-import { isRemoteActive } from "@/services/source";
 
 const castStore = useCastStore();
 const translationStore = useTranslationStore();
 const toast = useToast();
 
 const trackInfo = computed(() => castStore.trackInfo);
-const isRemote = computed(() => isRemoteActive());
+const isRemote = computed(() => castStore.optionsSource.kind === "remote");
 
 const isLoading = ref(false);
 const showTranslationModal = ref(false);
