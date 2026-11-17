@@ -47,8 +47,10 @@ The launcher icon is the desktop app's (`build/appicon.png`).
 - **Library**: shows, then seasons, then episodes, from the instance's library
   tree. An episode opens the play sheet: cast target (remembered), audio,
   subtitles (the file beside the episode is picked by default) and quality.
-- **Web page** (from Library): cast a page link; recent pages are kept on the
-  phone. The instance extracts pages it has a script for. For any other page
+- **Web page** (from Library, or Share › Frog Cast Remote in a browser): cast
+  a page link; recent pages are kept on the phone. The app closes when it
+  leaves the screen, since Fyne's activity ignores a share sent to a running
+  app. The instance extracts pages it has a script for. For any other page
   it answers 409, and the page opens full screen on the phone: tap play, and
   once it requests its stream the page closes and the stream, its headers,
   cookies and subtitles go to `/play-extracted`. Back closes the page and

@@ -85,11 +85,9 @@ func TestRenderScreens(t *testing.T) {
 	s.tabs.SelectIndex(0)
 	s.library.pages.back()
 	s.library.pages.back()
-	s.library.pages.push("Web page", s.web.content)
+	s.web.remember(webPage{URL: "https://hlsjs.video-dev.org/demo/", Title: "hls.js demo"})
+	s.web.share("https://www.example.test/film/sevimli-canavarlar-monsters-inc-2/")
 	snap("10-web")
-	s.web.castSheet(webPage{URL: "https://example.test/film/"})
-	snap("11-web-cast")
-	closeOverlays(w)
 	u.closeSession()
 }
 

@@ -17,6 +17,7 @@ func main() {
 	u := &ui{fyneApp: a, window: w}
 	u.showConnect()
 	w.SetOnClosed(u.closeSession)
+	a.Lifecycle().SetOnEnteredForeground(u.takeShare)
 
 	w.ShowAndRun()
 }
@@ -26,6 +27,8 @@ type ui struct {
 	fyneApp fyne.App
 	window  fyne.Window
 	session *session
+	// pendingShare is a shared link waiting for a connection.
+	pendingShare string
 }
 
 func (u *ui) fail(err error) { dialog.ShowError(err, u.window) }

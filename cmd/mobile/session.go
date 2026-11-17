@@ -57,6 +57,7 @@ func (u *ui) openSession(name string, client *castapi.Client) {
 	u.window.SetContent(container.NewBorder(container.NewPadded(bar), nil, nil, nil, s.tabs))
 
 	s.targets.load()
+	u.takeShare()
 	// Open on what's playing, if anything is.
 	go func() {
 		st, err := client.State()

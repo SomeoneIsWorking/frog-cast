@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -36,6 +36,10 @@ type webView struct {
 	content fyne.CanvasObject
 	pages   []webPage
 	list    *widget.List
+	recent  *widget.Label
+	link    *widget.Entry
+	quality *widget.Select
+	cast    *widget.Button
 	status  *widget.Label
 }
 
@@ -43,17 +47,29 @@ func newWebView(s *session) *webView {
 	v := &webView{s: s}
 	_ = json.Unmarshal([]byte(s.ui.fyneApp.Preferences().String(prefWebPages)), &v.pages)
 
-	link := widget.NewEntry()
-	link.SetPlaceHolder("Page link")
-	cast := widget.NewButtonWithIcon("Cast", theme.MediaPlayIcon(), func() {
-		v.castSheet(webPage{URL: link.Text})
-	})
-	cast.Importance = widget.HighImportance
+	// Wrapped, so a whole link shows without scrolling sideways.
+	v.link = widget.NewMultiLineEntry()
+	v.link.Wrapping = fyne.TextWrapBreak
+	v.link.SetMinRowsVisible(2)
+	v.link.SetPlaceHolder("Paste or share a page link")
 	paste := widget.NewButtonWithIcon("", theme.ContentPasteIcon(), func() {
-		link.SetText(s.ui.fyneApp.Clipboard().Content())
+		v.link.SetText(sharedLink(s.ui.fyneApp.Clipboard().Content()))
 	})
 	paste.Importance = widget.LowImportance
 
+	v.quality = widget.NewSelect(qualityLabels, nil)
+	v.quality.PlaceHolder = "Instance default"
+	form := widget.NewForm(
+		widget.NewFormItem("Cast to", s.targets.newSelect()),
+		widget.NewFormItem("Quality", v.quality),
+	)
+
+	v.cast = widget.NewButtonWithIcon("Cast", theme.MediaPlayIcon(), v.castLink)
+	v.cast.Importance = widget.HighImportance
+	v.status = caption("")
+	v.status.Hide()
+
+	v.recent = widget.NewLabelWithStyle("Recent pages", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	v.list = widget.NewList(
 		func() int { return len(v.pages) },
 		func() fyne.CanvasObject { return newRow(theme.MediaVideoIcon()) },
@@ -72,60 +88,57 @@ func newWebView(s *session) *webView {
 	)
 	v.list.OnSelected = func(i widget.ListItemID) {
 		v.list.Unselect(i)
-		v.castSheet(v.pages[i])
+		v.link.SetText(v.pages[i].URL)
 	}
+	v.recent.Hidden = len(v.pages) == 0
 
-	v.status = caption("A page the instance has no script for opens here: tap play on it and the stream goes to the TV.")
-	top := container.NewVBox(
-		container.NewBorder(nil, nil, nil, paste, link),
-		cast,
-		v.status,
-		heading1("Recent"),
-	)
+	top := container.NewVBox(container.NewBorder(nil, nil, nil, paste, v.link), form, v.cast, v.status, widget.NewSeparator(), v.recent)
 	v.content = container.NewBorder(container.NewPadded(top), nil, nil, nil, v.list)
 	return v
 }
 
-// castSheet picks the target and quality for a page and casts it.
-func (v *webView) castSheet(page webPage) {
+// share shows a link shared to the app, ready to cast.
+func (v *webView) share(link string) {
+	v.s.tabs.SelectIndex(0)
+	if v.s.library.pages.top() != v.content {
+		v.s.library.pages.push("Web page", v.content)
+	}
+	v.link.SetText(link)
+}
+
+func (v *webView) setStatus(text string) {
+	v.status.SetText(text)
+	v.status.Hidden = text == ""
+	v.status.Refresh()
+}
+
+// castLink casts the page in the link field to the chosen target.
+func (v *webView) castLink() {
+	page := webPage{URL: strings.TrimSpace(v.link.Text)}
 	if u, err := url.Parse(page.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		v.s.ui.fail(errors.New("enter a web page link (http or https)"))
 		return
 	}
-	target := v.s.targets.newSelect()
-	quality := widget.NewSelect(qualityLabels, nil)
-	quality.PlaceHolder = "Instance default"
-	title := page.Title
-	if title == "" {
-		title = "Cast page"
+	host, err := v.s.targets.selected()
+	if err != nil {
+		v.s.ui.fail(err)
+		return
 	}
-	form := dialog.NewForm(title, "Cast", "Cancel", []*widget.FormItem{
-		widget.NewFormItem("Cast to", target),
-		widget.NewFormItem("Quality", quality),
-	}, func(ok bool) {
-		if !ok {
-			return
-		}
-		opts := castapi.PlayOptions{SubtitlePath: "none"}
-		if i := quality.SelectedIndex(); i >= 0 {
-			opts.Quality = &qualityValues[i]
-		}
-		v.cast(page, v.s.targets.selected(), opts)
-	}, v.s.ui.window)
-	form.Resize(fyne.NewSize(v.s.ui.window.Canvas().Size().Width-16, form.MinSize().Height))
-	form.Show()
-}
-
-func (v *webView) cast(page webPage, host string, opts castapi.PlayOptions) {
-	v.status.SetText("Asking the instance…")
+	opts := castapi.PlayOptions{SubtitlePath: "none"}
+	if i := v.quality.SelectedIndex(); i >= 0 {
+		opts.Quality = &qualityValues[i]
+	}
+	v.cast.Disable()
+	v.setStatus("Asking " + v.s.name + "…")
 	go func() {
 		st, err := v.s.client.Play(page.URL, host, opts)
 		if errors.Is(err, castapi.ErrNeedsExtraction) {
-			fyne.Do(func() { v.status.SetText("Tap play on the page; it closes once the stream is found.") })
+			fyne.Do(func() { v.setStatus("Tap play on the page; it closes once the stream is found.") })
 			st, err = v.extractHere(page.URL, host, opts)
 		}
 		fyne.Do(func() {
-			v.status.SetText("")
+			v.cast.Enable()
+			v.setStatus("")
 			if err != nil {
 				v.s.ui.fail(err)
 				return
@@ -171,6 +184,6 @@ func (v *webView) remember(page webPage) {
 	if data, err := json.Marshal(pages); err == nil {
 		v.s.ui.fyneApp.Preferences().SetString(prefWebPages, string(data))
 	}
+	v.recent.Show()
 	v.list.Refresh()
 }
-

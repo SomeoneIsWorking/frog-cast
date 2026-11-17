@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
 
@@ -15,10 +17,16 @@ type targetPicker struct {
 	s       *session
 	devices []castapi.RemoteDevice
 	host    string
+	// selects are the pickers on screen, filled again when targets load.
+	selects map[*widget.Select]bool
 }
 
 func newTargetPicker(s *session) *targetPicker {
-	return &targetPicker{s: s, host: s.ui.fyneApp.Preferences().StringWithFallback(prefTarget, "")}
+	return &targetPicker{
+		s:       s,
+		host:    s.ui.fyneApp.Preferences().StringWithFallback(prefTarget, ""),
+		selects: map[*widget.Select]bool{},
+	}
 }
 
 // load asks the instance for its targets; it takes a few seconds.
@@ -33,21 +41,21 @@ func (t *targetPicker) load() {
 			if t.indexOf(t.host) < 0 {
 				t.host = t.defaultHost()
 			}
+			for sel := range t.selects {
+				t.fill(sel)
+			}
 		})
 	}()
 }
 
-// newSelect is a picker over the targets loaded so far, set to the current
-// choice; picking from it changes the choice.
+// newSelect is a picker over the targets, set to the current choice and
+// filled again when they load; picking from it changes the choice. release
+// it when it leaves the screen.
 func (t *targetPicker) newSelect() *widget.Select {
 	sel := widget.NewSelect(nil, nil)
 	sel.PlaceHolder = "Looking for TVs…"
-	for _, d := range t.devices {
-		sel.Options = append(sel.Options, t.label(d))
-	}
-	if i := t.indexOf(t.host); i >= 0 {
-		sel.SetSelectedIndex(i)
-	}
+	t.selects[sel] = true
+	t.fill(sel)
 	sel.OnChanged = func(string) {
 		if i := sel.SelectedIndex(); i >= 0 {
 			t.host = t.devices[i].Host
@@ -57,12 +65,32 @@ func (t *targetPicker) newSelect() *widget.Select {
 	return sel
 }
 
-// selected is the target host to cast to; "local" hosts it on the instance.
-func (t *targetPicker) selected() string {
-	if t.host == "" {
-		return t.defaultHost()
+func (t *targetPicker) release(sel *widget.Select) {
+	delete(t.selects, sel)
+}
+
+func (t *targetPicker) fill(sel *widget.Select) {
+	sel.Options = nil
+	for _, d := range t.devices {
+		sel.Options = append(sel.Options, t.label(d))
 	}
-	return t.host
+	if i := t.indexOf(t.host); i >= 0 {
+		sel.SetSelectedIndex(i)
+	}
+	sel.Refresh()
+}
+
+// selected is the target host to cast to; "local" hosts it on the instance.
+// Before the targets load there is only a remembered choice.
+func (t *targetPicker) selected() (string, error) {
+	switch {
+	case t.host != "":
+		return t.host, nil
+	case t.devices == nil:
+		return "", errors.New("still looking for TVs; try again in a moment")
+	default:
+		return t.defaultHost(), nil
+	}
 }
 
 // name is a target's display name, given the host the instance reports.

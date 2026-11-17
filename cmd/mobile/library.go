@@ -265,7 +265,11 @@ func (s *session) playSheet(id, title string, info *castapi.TrackDisplayInfo) {
 		if i := quality.SelectedIndex(); i >= 0 {
 			opts.Quality = &qualityValues[i]
 		}
-		host := s.targets.selected()
+		host, err := s.targets.selected()
+		if err != nil {
+			s.ui.fail(err)
+			return
+		}
 		go func() {
 			_, err := s.client.Play(id, host, opts)
 			fyne.Do(func() {
@@ -277,6 +281,7 @@ func (s *session) playSheet(id, title string, info *castapi.TrackDisplayInfo) {
 			})
 		}()
 	}, s.ui.window)
+	form.SetOnClosed(func() { s.targets.release(target) })
 	form.Resize(fyne.NewSize(s.ui.window.Canvas().Size().Width-16, form.MinSize().Height))
 	form.Show()
 }
@@ -324,6 +329,11 @@ func (p *pageStack) back() {
 		p.titles = p.titles[:len(p.titles)-1]
 		p.show()
 	}
+}
+
+// top is the page on screen.
+func (p *pageStack) top() fyne.CanvasObject {
+	return p.pages[len(p.pages)-1]
 }
 
 func (p *pageStack) show() {
