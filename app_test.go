@@ -99,7 +99,7 @@ func newTestApp(t *testing.T) (*App, *fakeReceiver) {
 	fake := &fakeReceiver{}
 	a := &App{
 		ctx:           context.Background(),
-		mediaServer:   NewServer("127.0.0.1", 0),
+		mediaServer:   NewServer(0),
 		localIp:       "127.0.0.1",
 		historyStore:  NewHistoryStore(),
 		settingsStore: NewSettingsStore(),

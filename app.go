@@ -44,10 +44,12 @@ type App struct {
 	hasWindow bool
 	App       castReceiver
 	// newReceiver connects to a cast device; tests replace it with a fake.
-	newReceiver   func(*App) castReceiver
-	discovery     *DeviceDiscovery
-	mediaServer   *Server
-	httpServer    *HTTPServer // remote control API for companion apps
+	newReceiver func(*App) castReceiver
+	discovery   *DeviceDiscovery
+	mediaServer *Server
+	httpServer  *HTTPServer // remote control API for companion apps
+	// localIp is this machine's address toward the current cast's device,
+	// set when the cast starts (the network can change after launch).
 	localIp       string
 	port          int
 	playbackState PlaybackState
@@ -81,13 +83,10 @@ func (a *App) createApplication() {
 }
 
 func NewApp() *App {
-	discovery := NewDeviceDiscovery()
-	localIP := discovery.GetLocalIP()
 	port := 8888
 	app := &App{
 		discovery:     NewDeviceDiscovery(),
-		mediaServer:   NewServer(localIP, port),
-		localIp:       localIP,
+		mediaServer:   NewServer(port),
 		port:          port,
 		playbackState: PlaybackState{Status: "STOPPED"},
 		historyStore:  NewHistoryStore(),
@@ -159,9 +158,16 @@ func (a *App) DiscoverDevices() []Device {
 	return []Device{}
 }
 
+// streamHost is the address the cast device fetches the stream from.
+func (a *App) streamHost() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.localIp
+}
+
 // getMediaURL returns the URL for a media file to be cast
 func (a *App) getMediaURL() string {
-	return fmt.Sprintf("http://%s:%d/playlist.m3u8", a.localIp, a.port)
+	return fmt.Sprintf("http://%s:%d/playlist.m3u8", a.streamHost(), a.port)
 }
 
 func (a *App) GetTrackDisplayInfo(fileNameOrUrl string) (*TrackDisplayInfo, error) {
@@ -353,7 +359,13 @@ func (a *App) startCast(deviceIp, fileNameOrUrl string, opts options.StreamOptio
 	}
 
 	hostOnly := deviceIp == "local"
+	toward := deviceIp
+	if hostOnly {
+		toward = ""
+	}
+	localIP := a.discovery.LocalIPFor(toward)
 	a.mu.Lock()
+	a.localIp = localIP
 	a.playbackState.MediaPath = fileNameOrUrl
 	a.playbackState.MediaName = name
 	a.playbackState.DeviceURL = deviceIp
@@ -423,7 +435,7 @@ func (a *App) loadOnDevice(deviceIp string, start float64, paused bool, opts opt
 		return fmt.Errorf("failed to update media status: %w", err)
 	}
 	if opts.Subtitle.Path != "none" && !opts.Subtitle.BurnIn {
-		a.sendSubtitles(fmt.Sprintf("http://%s:%d/subtitles.vtt", a.localIp, a.port))
+		a.sendSubtitles(fmt.Sprintf("http://%s:%d/subtitles.vtt", a.streamHost(), a.port))
 	}
 	return nil
 }
@@ -605,7 +617,7 @@ func (a *App) UpdateSubtitleSettings(opts options.SubtitleCastOptions) error {
 		if opts.FontSize != previous.FontSize {
 			a.setSubtitleSize(opts.FontSize)
 		}
-		a.sendSubtitles(fmt.Sprintf("http://%s:%d/subtitles.vtt", a.localIp, a.port))
+		a.sendSubtitles(fmt.Sprintf("http://%s:%d/subtitles.vtt", a.streamHost(), a.port))
 	}
 
 	// Re-seek to where the TV is now, not to its last report, which can be
@@ -1089,7 +1101,7 @@ func (a *App) GetRemoteAPIAddress() string {
 		return ""
 	}
 	settings := a.settingsStore.Get()
-	return fmt.Sprintf("http://%s:%d", a.localIp, settings.RemoteAPIPort)
+	return fmt.Sprintf("http://%s:%d", a.discovery.LocalIPFor(""), settings.RemoteAPIPort)
 }
 
 // GetFFmpegInfo returns ffmpeg and ffprobe version information

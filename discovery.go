@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"frog-cast/pkg/events"
 	"net"
 	"time"
-	"frog-cast/pkg/events"
 
 	castdns "github.com/vishen/go-chromecast/dns"
 )
@@ -98,8 +98,17 @@ func (dd *DeviceDiscovery) DiscoverSync(timeout time.Duration) []Device {
 	return devices
 }
 
-// GetLocalIP returns the local IP address
-func (dd *DeviceDiscovery) GetLocalIP() string {
+// LocalIPFor returns this machine's address on the route to device, so the
+// device can reach the stream. Without a reachable device it falls back to the
+// first non-loopback IPv4.
+func (dd *DeviceDiscovery) LocalIPFor(device string) string {
+	// A UDP dial only picks the route; it sends nothing.
+	if device != "" {
+		if conn, err := net.Dial("udp", net.JoinHostPort(device, "8009")); err == nil {
+			defer conn.Close()
+			return conn.LocalAddr().(*net.UDPAddr).IP.String()
+		}
+	}
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return "127.0.0.1"

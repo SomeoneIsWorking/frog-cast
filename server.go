@@ -15,7 +15,6 @@ import (
 
 // Server is an HTTP server for serving media
 type Server struct {
-	localIP       string
 	port          int
 	subtitlePath  string
 	streamHandler stream.StreamHandler
@@ -25,10 +24,9 @@ type Server struct {
 }
 
 // NewServer creates a new media server
-func NewServer(localIP string, port int) *Server {
+func NewServer(port int) *Server {
 	s := &Server{
-		localIP: localIP,
-		port:    port,
+		port: port,
 	}
 
 	mux := http.NewServeMux()

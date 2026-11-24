@@ -49,7 +49,7 @@ func freePort(t *testing.T) int {
 func headlessApp(t *testing.T, mediaPort, apiPort int) *App {
 	t.Helper()
 	a, _ := newTestApp(t)
-	a.mediaServer = NewServer("127.0.0.1", mediaPort)
+	a.mediaServer = NewServer(mediaPort)
 	a.port = mediaPort
 	a.RemoteManager = remote.NewManager(true)
 	a.httpServer = NewHTTPServer(a)
@@ -115,5 +115,15 @@ func TestHeadlessRefusesAScriptedPageItCannotExtract(t *testing.T) {
 	err := a.readyPage("https://scripted.example.test/film/", 0, 0, false)
 	if !errors.Is(err, castapi.ErrNeedsExtraction) {
 		t.Fatalf("err = %v, want needs-extraction", err)
+	}
+}
+
+func TestLocalIPForUsesTheRouteToTheDevice(t *testing.T) {
+	var dd *DeviceDiscovery
+	if got := dd.LocalIPFor("127.0.0.1"); got != "127.0.0.1" {
+		t.Fatalf("toward loopback = %s", got)
+	}
+	if got := dd.LocalIPFor(""); got == "" {
+		t.Fatal("no fallback address")
 	}
 }
