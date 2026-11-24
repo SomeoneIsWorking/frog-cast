@@ -104,6 +104,14 @@ func Extract(ctx context.Context, pageURL string, rules Rules, opts Options) (*R
 	return c.result(userAgent, cookies)
 }
 
+// UseHostLoop does nothing: Chromium needs no loop in this process.
+func UseHostLoop() {}
+
+// Available reports whether Extract can run in this process.
+func Available() bool {
+	return true
+}
+
 // RunMainLoop runs fn; Chromium needs no loop in this process.
 func RunMainLoop(fn func()) {
 	fn()

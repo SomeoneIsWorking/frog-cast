@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -105,7 +104,6 @@ type legacySettings struct {
 type SettingsStore struct {
 	settings Settings
 	filePath string
-	ctx      context.Context
 	mu       sync.RWMutex
 }
 
@@ -122,10 +120,6 @@ func NewSettingsStore() *SettingsStore {
 
 	store.load()
 	return store
-}
-
-func (s *SettingsStore) SetContext(ctx context.Context) {
-	s.ctx = ctx
 }
 
 func (s *SettingsStore) load() error {

@@ -1,14 +1,16 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"net/http"
-	"sync"
-	"time"
 	"frog-cast/pkg/events"
 	"frog-cast/pkg/inhibitor"
 	"frog-cast/pkg/options"
 	"frog-cast/pkg/stream"
+	"net"
+	"net/http"
+	"sync"
+	"time"
 )
 
 // Server is an HTTP server for serving media
@@ -85,10 +87,19 @@ func (s *Server) SetSeekTime(seconds int) {
 	s.seekTime = seconds
 }
 
-// Start starts the HTTP server
+// Start binds the media port and serves it in the background.
 func (s *Server) Start() error {
+	ln, err := net.Listen("tcp", s.httpServer.Addr)
+	if err != nil {
+		return fmt.Errorf("media server: listen %s: %w", s.httpServer.Addr, err)
+	}
 	logger.Info("Starting media server", "port", s.port)
-	return s.httpServer.ListenAndServe()
+	go func() {
+		if err := s.httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("Media server stopped", "error", err)
+		}
+	}()
+	return nil
 }
 
 // Stop stops the HTTP server

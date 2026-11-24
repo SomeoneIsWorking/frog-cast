@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -28,14 +29,20 @@ import (
 	"frog-cast/pkg/options"
 	"frog-cast/pkg/remote"
 	"frog-cast/pkg/stream"
+	"frog-cast/pkg/webextract"
 )
 
 var logger = _logger.Logger
 var customAppID = "7B88BB2E" // Custom receiver app ID
 
+// errNoWindow: a dialog was asked of a headless instance.
+var errNoWindow = errors.New("no window: this instance runs headless")
+
 type App struct {
 	ctx context.Context
-	App castReceiver
+	// hasWindow is false in a headless instance: no dialogs, no frontend.
+	hasWindow bool
+	App       castReceiver
 	// newReceiver connects to a cast device; tests replace it with a fake.
 	newReceiver   func(*App) castReceiver
 	discovery     *DeviceDiscovery
@@ -91,25 +98,49 @@ func NewApp() *App {
 	return app
 }
 
+// startup runs when the Wails window opens: frontend events and the WebKit
+// loop come from the window, then the services start.
 func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+	a.hasWindow = true
 	events.Subscribe(func(topic string, payload any) {
-		wails_runtime.EventsEmit(a.ctx, topic, payload)
+		wails_runtime.EventsEmit(ctx, topic, payload)
 	})
-	// Start media server
-	go a.mediaServer.Start()
-
-	// Start remote control HTTP API if enabled. Wire the library scanner in so
-	// the /library endpoint serves real items instead of the history fallback.
-	a.httpServer.SetLibraryLister(a)
-	settings := a.settingsStore.Get()
-	if settings.RemoteAPIEnabled {
-		if err := a.httpServer.Start(settings.RemoteAPIPort); err != nil {
+	webextract.UseHostLoop()
+	if err := a.startServices(ctx); err != nil {
+		logger.Error("Failed to start media server", "error", err)
+	}
+	if a.settingsStore.Get().RemoteAPIEnabled {
+		if err := a.startRemoteAPI(); err != nil {
 			logger.Error("Failed to start remote API", "error", err)
 		}
 	}
-
 	logger.Info("App started")
+}
+
+// serveHeadless starts everything remote clients use, with no window: the
+// remote API always runs, whatever the setting, and a failed bind is fatal.
+func (a *App) serveHeadless(ctx context.Context) error {
+	if err := a.startServices(ctx); err != nil {
+		return err
+	}
+	if err := a.startRemoteAPI(); err != nil {
+		return err
+	}
+	logger.Info("Headless instance serving", "remoteApiPort", a.settingsStore.Get().RemoteAPIPort, "mediaPort", a.port)
+	return nil
+}
+
+// startServices starts what both modes share; ctx bounds long-running work.
+func (a *App) startServices(ctx context.Context) error {
+	a.ctx = ctx
+	// Wire the library scanner in so /library serves real items instead of
+	// the history fallback.
+	a.httpServer.SetLibraryLister(a)
+	return a.mediaServer.Start()
+}
+
+func (a *App) startRemoteAPI() error {
+	return a.httpServer.Start(a.settingsStore.Get().RemoteAPIPort)
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -227,13 +258,13 @@ func (a *App) readyPage(pageURL string, videoTrack, audioTrack int, browserHere 
 	if dropped {
 		logger.Warn("Cached stream no longer loads, extracting again", "url", pageURL, "reason", reason)
 	}
-	if browserHere || a.RemoteManager.HasExtraction(pageURL) || extractor.HasScript(pageURL) {
+	if browserHere || a.RemoteManager.HasExtraction(pageURL) || (extractor.HasScript(pageURL) && webextract.Available()) {
 		return nil
 	}
 	if dropped {
 		return fmt.Errorf("the page's stream link expired (%v); send it again from the desktop app: %w", reason, castapi.ErrNeedsExtraction)
 	}
-	return fmt.Errorf("this page has no script, so it needs a browser someone can see: send it from the desktop app: %w", castapi.ErrNeedsExtraction)
+	return fmt.Errorf("this instance can't extract the page (no site script, or no browser engine when headless): send it from the desktop app: %w", castapi.ErrNeedsExtraction)
 }
 
 // castWithStyle casts with the subtitle style of the controller that started
@@ -778,6 +809,9 @@ func (a *App) OpenFileDialog(title string, filters []string) (string, error) {
 				Pattern:     pattern,
 			},
 		}
+	}
+	if !a.hasWindow {
+		return "", errNoWindow
 	}
 
 	return wails_runtime.OpenFileDialog(a.ctx, wails_runtime.OpenDialogOptions{

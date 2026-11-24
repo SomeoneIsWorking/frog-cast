@@ -10,6 +10,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,9 @@ import (
 
 //go:embed capture.js
 var captureJS string
+
+// ErrNoBrowser: this process runs no browser engine loop (a headless instance).
+var ErrNoBrowser = errors.New("no browser engine in this process")
 
 // Rules adapt extraction to a site.
 type Rules struct {

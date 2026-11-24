@@ -15,8 +15,8 @@ import (
 	wails_runtime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"frog-cast/pkg/ai"
-	"frog-cast/pkg/events"
 	"frog-cast/pkg/castapi"
+	"frog-cast/pkg/events"
 )
 
 // ─── Organize types ──────────────────────────────────────────────────────────
@@ -333,6 +333,9 @@ func (a *App) ListLibraryItems() ([]LibraryItem, error) {
 // OpenLibraryFolderDialog shows a native folder picker and returns the chosen
 // path (empty string if cancelled).
 func (a *App) OpenLibraryFolderDialog() (string, error) {
+	if !a.hasWindow {
+		return "", errNoWindow
+	}
 	return wails_runtime.OpenDirectoryDialog(a.ctx, wails_runtime.OpenDialogOptions{
 		Title: "Select Library Folder",
 	})

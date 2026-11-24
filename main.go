@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"os"
 	"runtime"
 
 	"github.com/wailsapp/wails/v2"
@@ -13,7 +14,13 @@ import (
 var assets embed.FS
 
 func main() {
-	// Create an instance of the app structure
+	if handled, err := runCommand(os.Args[1:], os.Stdout); handled {
+		if err != nil {
+			logger.Error("frog-cast", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	app := NewApp()
 
 	// Create application with options

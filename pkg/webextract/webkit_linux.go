@@ -134,8 +134,22 @@ import (
 	"os"
 	"runtime/cgo"
 	"strings"
+	"sync/atomic"
 	"unsafe"
 )
+
+// loopRunning is whether onMain has a GTK main loop: the host app's or RunMainLoop's.
+var loopRunning atomic.Bool
+
+// UseHostLoop records that the host app (Wails) runs the GTK main loop.
+func UseHostLoop() {
+	loopRunning.Store(true)
+}
+
+// Available reports whether Extract can run in this process.
+func Available() bool {
+	return loopRunning.Load()
+}
 
 // onMain runs fn on the GTK main loop, which must be running (the app's, or
 // RunMainLoop's). Callers must not be on that loop themselves.
@@ -197,6 +211,9 @@ func goCookies(handle C.uintptr_t, text *C.char) {
 // Extract loads pageURL in an offscreen WebView (a window when visible, for
 // someone to click play) until it plays an HLS stream or ctx ends.
 func Extract(ctx context.Context, pageURL string, rules Rules, opts Options) (*Result, error) {
+	if !Available() {
+		return nil, ErrNoBrowser
+	}
 	js, err := script(rules)
 	if err != nil {
 		return nil, err
@@ -260,6 +277,7 @@ func Extract(ctx context.Context, pageURL string, rules Rules, opts Options) (*R
 // with the thread locked (runtime.LockOSThread in init).
 func RunMainLoop(fn func()) {
 	C.gtk_init(nil, nil)
+	loopRunning.Store(true)
 	go func() {
 		fn()
 		onMain(func() { C.gtk_main_quit() })
