@@ -237,7 +237,7 @@ func (a *App) GetTrackDisplayInfo(fileNameOrUrl string) (*TrackDisplayInfo, erro
 		AudioTracks: linq.Map(trackInfo.AudioTracks, func(a hls.AudioTrack) AudioTracksDisplayItem {
 			return AudioTracksDisplayItem{
 				Index:    a.Index,
-				Language: a.Language,
+				Language: a.Label(),
 			}
 		}),
 		SubtitleTracks: subtitleItems,

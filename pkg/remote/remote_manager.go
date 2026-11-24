@@ -4,16 +4,17 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"frog-cast/pkg/extractor"
+	"frog-cast/pkg/filehelper"
+	"frog-cast/pkg/folders"
+	"frog-cast/pkg/hls"
+	"frog-cast/pkg/subtitles"
 	u "net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
-	"frog-cast/pkg/extractor"
-	"frog-cast/pkg/filehelper"
-	"frog-cast/pkg/folders"
-	"frog-cast/pkg/hls"
 )
 
 type RemoteManager struct {
@@ -272,14 +273,35 @@ func storeExtraction(data *ExtractionData, manifest string, subtitles []PageSubt
 		return err
 	}
 	data.Subtitles = nil
+	labels := pageSubtitleLabels(subtitles)
 	for i, sub := range subtitles {
-		stored := PageSubtitle{Label: sub.Label, File: fmt.Sprintf("page_subtitle_%d.vtt", i)}
+		stored := PageSubtitle{Label: labels[i], File: fmt.Sprintf("page_subtitle_%d.vtt", i)}
 		if err := filehelper.WriteFile(PageSubtitlePath(data.URL, stored), []byte(sub.Content)); err != nil {
 			return err
 		}
 		data.Subtitles = append(data.Subtitles, stored)
 	}
 	return filehelper.WriteJson(extractionFile(data.URL), data)
+}
+
+// pageSubtitleLabels names each subtitle by the language of its text, since
+// pages often serve them under opaque tokens; the page's own name is kept when
+// the language can't be told. Repeats are numbered: "English", "English 2".
+func pageSubtitleLabels(subs []PageSubtitleContent) []string {
+	labels := make([]string, len(subs))
+	seen := map[string]int{}
+	for i, sub := range subs {
+		label := subtitles.Language(sub.Content)
+		if label == "" {
+			label = sub.Label
+		}
+		seen[label]++
+		if n := seen[label]; n > 1 {
+			label = fmt.Sprintf("%s %d", label, n)
+		}
+		labels[i] = label
+	}
+	return labels
 }
 
 func extractionFile(url string) string {

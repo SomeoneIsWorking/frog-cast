@@ -90,7 +90,9 @@ type SubtitleDisplayItem struct {
 }
 
 type AudioTracksDisplayItem struct {
-	Index    int
+	Index int
+	// Language is the track's display name (HLS NAME, else LANGUAGE); the
+	// field keeps its name for clients already installed.
 	Language string
 }
 

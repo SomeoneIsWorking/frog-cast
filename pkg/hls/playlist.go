@@ -57,6 +57,14 @@ type AudioTrack struct {
 	Index      int
 }
 
+// Label is the track's name for people: its NAME, else its LANGUAGE code.
+func (a AudioTrack) Label() string {
+	if a.Name != "" {
+		return a.Name
+	}
+	return a.Language
+}
+
 // SubtitleTrack represents a subtitle track (#EXT-X-MEDIA TYPE=SUBTITLES)
 type SubtitleTrack struct {
 	URI        *url.URL

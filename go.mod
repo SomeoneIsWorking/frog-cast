@@ -17,6 +17,7 @@ require (
 	fyne.io/systray v1.12.1 // indirect
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/BurntSushi/toml v1.5.0 // indirect
+	github.com/abadojack/whatlanggo v1.0.1 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
