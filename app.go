@@ -182,10 +182,11 @@ func (a *App) GetTrackDisplayInfo(fileNameOrUrl string) (*TrackDisplayInfo, erro
 		}
 		trackInfo = mediaManager.Manifest
 		if data, _, err := a.RemoteManager.CachedExtraction(fileNameOrUrl); err == nil {
-			for _, sub := range data.Subtitles {
+			names := remote.PageSubtitleNames(fileNameOrUrl, data.Subtitles)
+			for i, sub := range data.Subtitles {
 				pageSubtitles = append(pageSubtitles, SubtitleDisplayItem{
 					Path:  "external:" + remote.PageSubtitlePath(fileNameOrUrl, sub),
-					Label: "Page: " + sub.Label,
+					Label: "Page: " + names[i],
 				})
 			}
 		}

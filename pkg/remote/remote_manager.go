@@ -273,9 +273,8 @@ func storeExtraction(data *ExtractionData, manifest string, subtitles []PageSubt
 		return err
 	}
 	data.Subtitles = nil
-	labels := pageSubtitleLabels(subtitles)
 	for i, sub := range subtitles {
-		stored := PageSubtitle{Label: labels[i], File: fmt.Sprintf("page_subtitle_%d.vtt", i)}
+		stored := PageSubtitle{Label: sub.Label, File: fmt.Sprintf("page_subtitle_%d.vtt", i)}
 		if err := filehelper.WriteFile(PageSubtitlePath(data.URL, stored), []byte(sub.Content)); err != nil {
 			return err
 		}
@@ -284,14 +283,16 @@ func storeExtraction(data *ExtractionData, manifest string, subtitles []PageSubt
 	return filehelper.WriteJson(extractionFile(data.URL), data)
 }
 
-// pageSubtitleLabels names each subtitle by the language of its text, since
-// pages often serve them under opaque tokens; the page's own name is kept when
-// the language can't be told. Repeats are numbered: "English", "English 2".
-func pageSubtitleLabels(subs []PageSubtitleContent) []string {
+// PageSubtitleNames names a page's stored subtitles by the language of their
+// text, since pages often serve them under opaque tokens; the page's own name
+// is kept when the language can't be told. Repeats are numbered: "English",
+// "English 2".
+func PageSubtitleNames(pageURL string, subs []PageSubtitle) []string {
 	labels := make([]string, len(subs))
 	seen := map[string]int{}
 	for i, sub := range subs {
-		label := subtitles.Language(sub.Content)
+		content, _ := os.ReadFile(PageSubtitlePath(pageURL, sub))
+		label := subtitles.Language(string(content))
 		if label == "" {
 			label = sub.Label
 		}
