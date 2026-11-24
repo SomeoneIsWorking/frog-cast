@@ -54,6 +54,46 @@ wails build
 
 The built application will be located in the `build/bin/` directory.
 
+## Running headless as a user service
+
+On Linux, Frog Cast can run with no window as a casting instance that phones
+and other desktop instances drive over the network:
+
+```bash
+frog-cast serve
+```
+
+`serve` starts the remote API (on the settings file's port, default 9999,
+whether or not the API is enabled there), the media server on 8888, mDNS
+advertising and the cast receiver, with history, cache and downloads as in the
+desktop app. It never opens a window or a display connection, so it runs
+without a graphical session. Pages that need a browser engine to find their
+stream are refused with the needs-extraction error, and the phone or desktop
+app extracts them and sends the result. The stream address given to the TV is
+worked out per cast from the route to it, so a service started at boot before
+the network is up still casts.
+
+To build it, install it to `~/.local/bin/frog-cast` and run it as the systemd
+user unit `packaging/systemd/frog-cast.service`:
+
+```bash
+uv run --frozen python tools/install_service.py
+```
+
+It needs Go, npm, pkg-config and the WebKitGTK 4.1, GTK 3 and libsoup 3
+development packages; it builds with `go build` directly, not the Wails CLI.
+Rerun it after pulling to update; it will not restart an instance that is
+casting unless given `--force-restart`. Logs go to the journal:
+
+```bash
+systemctl --user status frog-cast
+journalctl --user -u frog-cast -f
+```
+
+A user service runs only while its user is logged in unless lingering is on
+(`loginctl enable-linger $USER`), which starts it at boot. The firewall must
+let in TCP 9999 and 8888 and UDP 5353 (mDNS).
+
 ## Project Structure
 
 - `app.go` - Main application entry point

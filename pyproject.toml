@@ -1,0 +1,6 @@
+[project]
+name = "frog-cast-tools"
+version = "0.1.0"
+description = "Maintainer tools for Frog Cast"
+requires-python = ">=3.12"
+dependencies = []

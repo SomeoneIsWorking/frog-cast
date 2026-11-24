@@ -1,0 +1,11 @@
+[Unit]
+Description=Frog Cast headless casting instance
+Documentation=https://github.com/SomeoneIsWorking/frog-cast#running-headless-as-a-user-service
+
+[Service]
+ExecStart=%h/.local/bin/frog-cast serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

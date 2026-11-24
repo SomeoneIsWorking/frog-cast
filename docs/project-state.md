@@ -32,6 +32,7 @@ S003 is the current focus.
 | S015 | Shows are identified and organized into seasons and episodes in a local library | partial | S009 | G001 |
 | S016 | Torrent submissions enter the same managed media workflow | partial | S015 | G001 |
 | S017 | Remote API access is authenticated by token and advertised only through the configured scope | partial | S006 | G001 |
+| S018 | A headless instance runs as a systemd user service and serves remote clients with no window | partial | S006 | G001 |
 
 ## Capability details
 
@@ -131,3 +132,13 @@ lacks a durable integration run.
 
 The configurable API uses token authentication and mDNS advertisement. Gap: positive and negative
 protocol controls for scope, authentication, and the complete endpoint set are absent.
+
+### S018 — Headless user service
+
+`frog-cast serve` (headless.go) starts the media server, remote API, mDNS and
+cast receiver with no Wails window; `tools/install_service.py` installs it as
+`packaging/systemd/frog-cast.service`. Verified on Fedora: the unit stays active
+across restarts, answers on the LAN, holds no display connection, and a remote
+`/play` hosts a stream that decodes from another client. Gap: a remotely started
+cast to the TV has not been watched playing yet, and pages that need a browser
+engine are refused headless (the controller extracts them).
