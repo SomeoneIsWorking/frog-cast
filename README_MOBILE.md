@@ -41,6 +41,9 @@ The launcher icon is the desktop app's (`build/appicon.png`).
 
 ## Screens
 
+Choices and confirmations open as sheets from the bottom of the screen; a tap
+outside the sheet or Back closes it.
+
 - **Connect**: searches the network on open (one-shot mDNS queries answered by
   unicast, so it works without Android's multicast lock), offers the last
   instance used, or an address and token.

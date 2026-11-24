@@ -5,7 +5,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -28,11 +27,8 @@ func newCacheView(s *session) *cacheView {
 	v.parts.Wrapping = fyne.TextWrapWord
 	clear := func(label, part, what string, importance widget.Importance) *widget.Button {
 		b := widget.NewButton(label, func() {
-			dialog.ShowConfirm("Clear "+what+"?", "This deletes "+what+" on "+s.name+".", func(ok bool) {
-				if ok {
-					v.clear(part)
-				}
-			}, s.ui.window)
+			s.ui.confirm("Clear "+what+"?", "This deletes "+what+" on "+s.name+".", "Clear", widget.DangerImportance,
+				func() { v.clear(part) })
 		})
 		b.Importance = importance
 		return b

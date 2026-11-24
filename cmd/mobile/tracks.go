@@ -8,7 +8,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
 	"frog-cast/pkg/castapi"
@@ -59,7 +58,7 @@ func subtitleChoices(info *castapi.TrackDisplayInfo, current string) subtitleOpt
 // quality or subtitle source. The TV reloads at the same position.
 func (s *session) showTracksSheet(st *castapi.PlaybackState) {
 	if st.Selection == nil {
-		dialog.ShowInformation("Tracks", "This instance doesn't report what it's playing. Update it to switch tracks.", s.ui.window)
+		s.ui.inform("Tracks", "This instance doesn't report what it's playing. Update it to switch tracks.")
 		return
 	}
 	sel := *st.Selection
@@ -117,10 +116,7 @@ func (s *session) tracksSheet(sel castapi.CastSelection, info *castapi.TrackDisp
 	}
 	items = append(items, widget.NewFormItem("Subtitles", subtitle))
 
-	form := dialog.NewForm("Tracks", "Switch", "Cancel", items, func(ok bool) {
-		if !ok {
-			return
-		}
+	switchTracks := func() {
 		var change castapi.TrackChange
 		if i := video.SelectedIndex(); i >= 0 && info.VideoTracks[i].Index != sel.VideoTrack {
 			change.VideoTrack = &info.VideoTracks[i].Index
@@ -139,9 +135,11 @@ func (s *session) tracksSheet(sel castapi.CastSelection, info *castapi.TrackDisp
 				fyne.Do(func() { s.ui.fail(err) })
 			}
 		}()
-	}, s.ui.window)
-	form.Resize(fyne.NewSize(s.ui.window.Canvas().Size().Width-16, form.MinSize().Height))
-	form.Show()
+	}
+	s.ui.showSheet("Tracks", sheetFields(items...),
+		sheetAction{label: "Cancel", importance: widget.LowImportance},
+		sheetAction{label: "Switch", importance: widget.HighImportance, tapped: switchTracks},
+	)
 }
 
 // showSubtitleSheet adjusts the running cast's subtitle size, timing and
@@ -199,12 +197,10 @@ func (s *session) showSubtitleSheet(st *castapi.PlaybackState) {
 	italic := widget.NewCheck("Italic", func(on bool) { opts.Italic = on; apply() })
 	italic.Checked = opts.Italic
 
-	content := widget.NewForm(
+	content := sheetFields(
 		widget.NewFormItem("Timing", timing),
 		widget.NewFormItem("Size", container.NewBorder(nil, nil, nil, sizeLabel, size)),
 		widget.NewFormItem("Style", container.NewHBox(bold, italic)),
 	)
-	d := dialog.NewCustom("Subtitles", "Done", content, s.ui.window)
-	d.Resize(fyne.NewSize(s.ui.window.Canvas().Size().Width-16, d.MinSize().Height))
-	d.Show()
+	s.ui.showSheet("Subtitles", content, sheetAction{label: "Done", importance: widget.HighImportance})
 }

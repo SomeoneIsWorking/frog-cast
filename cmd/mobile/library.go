@@ -6,7 +6,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -238,10 +237,7 @@ func (s *session) playSheet(id, title string, info *castapi.TrackDisplayInfo) {
 		widget.NewFormItem("Quality", quality),
 	)
 
-	form := dialog.NewForm(title, "Play", "Cancel", items, func(ok bool) {
-		if !ok {
-			return
-		}
+	play := func() {
 		opts := castapi.PlayOptions{}
 		if i := audio.SelectedIndex(); i >= 0 {
 			opts.AudioTrack = info.AudioTracks[i].Index
@@ -267,10 +263,12 @@ func (s *session) playSheet(id, title string, info *castapi.TrackDisplayInfo) {
 				s.showPlaying()
 			})
 		}()
-	}, s.ui.window)
-	form.SetOnClosed(func() { s.targets.release(target) })
-	form.Resize(fyne.NewSize(s.ui.window.Canvas().Size().Width-16, form.MinSize().Height))
-	form.Show()
+	}
+	sh := s.ui.showSheet(title, sheetFields(items...),
+		sheetAction{label: "Cancel", importance: widget.LowImportance},
+		sheetAction{label: "Play", importance: widget.HighImportance, tapped: play},
+	)
+	sh.onClosed = func() { s.targets.release(target) }
 }
 
 func trackLabel(index int, language string) string {

@@ -9,7 +9,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -58,11 +57,8 @@ func newHistoryView(s *session) *historyView {
 	}
 	v.empty = emptyState(theme.HistoryIcon(), "Nothing cast yet", "What "+s.name+" casts shows up here.")
 	clearAll := widget.NewButtonWithIcon("Clear history", theme.DeleteIcon(), func() {
-		dialog.ShowConfirm("Clear history?", "This clears what "+s.name+" has cast.", func(ok bool) {
-			if ok {
-				v.remove("")
-			}
-		}, s.ui.window)
+		s.ui.confirm("Clear history?", "This clears what "+s.name+" has cast.", "Clear", widget.DangerImportance,
+			func() { v.remove("") })
 	})
 	clearAll.Importance = widget.LowImportance
 	v.content = container.NewBorder(nil, clearAll, nil, nil, container.NewStack(v.list, v.empty))

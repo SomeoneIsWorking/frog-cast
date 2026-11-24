@@ -4,7 +4,6 @@ package main
 import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/dialog"
 )
 
 const appID = "io.frogcast.remote"
@@ -32,7 +31,7 @@ type ui struct {
 	pendingShare string
 }
 
-func (u *ui) fail(err error) { dialog.ShowError(err, u.window) }
+func (u *ui) fail(err error) { u.inform("Something went wrong", err.Error()) }
 
 func (u *ui) closeSession() {
 	if u.session != nil {

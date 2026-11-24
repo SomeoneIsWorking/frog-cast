@@ -7,7 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -175,7 +175,7 @@ func (v *manageView) previewOrganize() {
 
 func (v *manageView) showOrganize(plan []castapi.OrganizeMove) {
 	if len(plan) == 0 {
-		dialog.ShowInformation("Organize", "Everything is already in place.", v.s.ui.window)
+		v.s.ui.inform("Organize", "Everything is already in place.")
 		return
 	}
 	list := cardList(
@@ -184,10 +184,8 @@ func (v *manageView) showOrganize(plan []castapi.OrganizeMove) {
 		func(i widget.ListItemID, o fyne.CanvasObject) { o.(*widget.Label).SetText(plan[i].Description) },
 	)
 	size := v.s.ui.window.Canvas().Size()
-	d := dialog.NewCustomConfirm(fmt.Sprintf("Move %s?", plural(len(plan), "file")), "Move", "Cancel", list, func(ok bool) {
-		if !ok {
-			return
-		}
+	body := container.New(layout.NewGridWrapLayout(fyne.NewSize(size.Width-48, size.Height*0.5)), list)
+	move := func() {
 		go func() {
 			err := v.s.client.OrganizeExecute(plan)
 			fyne.Do(func() {
@@ -198,40 +196,42 @@ func (v *manageView) showOrganize(plan []castapi.OrganizeMove) {
 				v.scan()
 			})
 		}()
-	}, v.s.ui.window)
-	d.Resize(fyne.NewSize(size.Width-16, size.Height*0.7))
-	d.Show()
+	}
+	v.s.ui.showSheet(fmt.Sprintf("Move %s?", plural(len(plan), "file")), body,
+		sheetAction{label: "Cancel", importance: widget.LowImportance},
+		sheetAction{label: "Move", importance: widget.HighImportance, tapped: move},
+	)
 }
 
 func (v *manageView) promptTranslate(ref seasonRef) {
 	prefs := v.s.ui.fyneApp.Preferences()
 	language := widget.NewEntry()
 	language.SetText(prefs.StringWithFallback(prefLanguage, "Turkish"))
-	d := dialog.NewForm("Translate "+ref.season.Name, "Start", "Cancel",
-		[]*widget.FormItem{widget.NewFormItem("Into", language)},
-		func(ok bool) {
-			lang := strings.TrimSpace(language.Text)
-			if !ok || lang == "" {
-				return
-			}
-			prefs.SetString(prefLanguage, lang)
-			paths := make([]string, 0, len(ref.season.Episodes))
-			for _, e := range ref.season.Episodes {
-				paths = append(paths, e.Path)
-			}
-			go func() {
-				err := v.s.client.TranslateSeason(ref.show, ref.season.Name, paths, lang)
-				fyne.Do(func() {
-					if err != nil {
-						v.s.ui.fail(err)
-						return
-					}
-					v.followSeason()
-				})
-			}()
-		}, v.s.ui.window)
-	d.Resize(fyne.NewSize(v.s.ui.window.Canvas().Size().Width-16, d.MinSize().Height))
-	d.Show()
+	start := func() {
+		lang := strings.TrimSpace(language.Text)
+		if lang == "" {
+			return
+		}
+		prefs.SetString(prefLanguage, lang)
+		paths := make([]string, 0, len(ref.season.Episodes))
+		for _, e := range ref.season.Episodes {
+			paths = append(paths, e.Path)
+		}
+		go func() {
+			err := v.s.client.TranslateSeason(ref.show, ref.season.Name, paths, lang)
+			fyne.Do(func() {
+				if err != nil {
+					v.s.ui.fail(err)
+					return
+				}
+				v.followSeason()
+			})
+		}()
+	}
+	v.s.ui.showSheet("Translate "+ref.season.Name, sheetFields(widget.NewFormItem("Into", language)),
+		sheetAction{label: "Cancel", importance: widget.LowImportance},
+		sheetAction{label: "Start", importance: widget.HighImportance, tapped: start},
+	)
 }
 
 // followSeason shows a running season translation until it ends.

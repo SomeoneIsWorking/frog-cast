@@ -44,9 +44,9 @@ type nowPlaying struct {
 	volumeMu      sync.Mutex
 	volumeBusy    bool
 	volumePending *float64
-	tracks      *playingTracks
-	resume      *widget.Label
-	resumeCard  fyne.CanvasObject
+	tracks        *playingTracks
+	resume        *widget.Label
+	resumeCard    fyne.CanvasObject
 }
 
 // volumeStep is one notch of the TV's 0–100 volume.
