@@ -446,6 +446,24 @@ func (a *App) loadOnDevice(deviceIp string, start float64, paused bool, opts opt
 // subtitle change without burn-in is applied live. Anything else re-casts the
 // same media to the same device at the current position, keeping it paused
 // if it was.
+// Recast loads the last cast on its device again, at its last position and
+// with its tracks, playing: for a TV that dropped the session (asleep after a
+// long pause).
+func (a *App) Recast() (*PlaybackState, error) {
+	a.mu.RLock()
+	if a.streamOptions == nil || a.playbackState.MediaPath == "" || a.playbackState.DeviceURL == "" {
+		a.mu.RUnlock()
+		return nil, fmt.Errorf("nothing to recast")
+	}
+	opts := *a.streamOptions
+	mediaPath := a.playbackState.MediaPath
+	deviceIp := a.playbackState.DeviceURL
+	position := a.extrapolatedPosition()
+	a.mu.RUnlock()
+	logger.Info("Re-casting", "media", mediaPath, "device", deviceIp, "position", position)
+	return a.startCast(deviceIp, mediaPath, opts, position, false)
+}
+
 func (a *App) ChangeTracks(change castapi.TrackChange) (*PlaybackState, error) {
 	a.mu.RLock()
 	if a.streamOptions == nil || a.playbackState.Status == "STOPPED" {

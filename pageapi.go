@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -92,7 +93,13 @@ func (h *HTTPServer) handleDownload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "url must be a web page and type video or audio"})
 		return
 	}
-	if !h.readyWebPage(w, req.URL) {
+	// A status read uses the stored extraction only: probing the site on every
+	// poll is slow, and a failed probe would drop the cache mid-download.
+	if r.Method == http.MethodGet && !h.app.RemoteManager.HasExtraction(req.URL) {
+		writeCastError(w, fmt.Errorf("%s isn't extracted on this instance: %w", req.URL, castapi.ErrNeedsExtraction))
+		return
+	}
+	if r.Method == http.MethodPost && !h.readyWebPage(w, req.URL) {
 		return
 	}
 	var status *castapi.DownloadStatus

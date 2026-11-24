@@ -586,6 +586,8 @@ func (h *HTTPServer) handleControl(w http.ResponseWriter, r *http.Request) {
 		err = h.app.SetMuted(true)
 	case "unmute":
 		err = h.app.SetMuted(false)
+	case "recast":
+		_, err = h.app.Recast()
 	default:
 		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "unknown action: " + req.Action})
 		return
