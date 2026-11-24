@@ -117,6 +117,7 @@ func (this *RemoteHandler) ServeTrackPlaylist(ctx context.Context, trackType str
 // and transcodes them using ffmpeg for compatibility
 func (this *RemoteHandler) ServeSegment(ctx context.Context, trackType string, segmentIndex int) (*mix.FileOrBuffer, error) {
 	logger.Logger.Info("Proxying request", "type", trackType, "segment", segmentIndex)
+	this.getTrackManager(trackType).ReadAhead(segmentIndex)
 
 	if this.Options.NoTranscodeCache {
 		segment, err := this.getTrackManager(trackType).GetSegment(ctx, segmentIndex)

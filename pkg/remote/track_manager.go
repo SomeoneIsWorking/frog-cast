@@ -30,6 +30,12 @@ type TrackManager struct {
 
 	initMu   sync.Mutex
 	initData []byte
+
+	// fetchMu guards fetching, the read-ahead window and DownloadedSegments.
+	fetchMu      sync.Mutex
+	fetching     map[int]*segmentFetch
+	aheadFrom    int
+	aheadRunning bool
 }
 
 type DownloadStatusQeuryResponse struct {
@@ -255,18 +261,16 @@ func (this *TrackManager) GetSegment(ctx context.Context, segmentIndex int) (*mi
 		return mix.File(cachePath), nil
 	}
 
-	data, err := this.downloadSegment(ctx, segmentIndex)
-	if err != nil {
-		return nil, err
-	}
-
 	if !this.Cache {
+		data, err := this.downloadSegment(ctx, segmentIndex)
+		if err != nil {
+			return nil, err
+		}
 		return mix.Buffer(data), nil
 	}
 
-	if filehelper.WriteFile(cachePath, data) == nil {
-		this.DownloadedSegments[segmentIndex] = true
-		this.statusUpdate()
+	if err := this.fetchToCache(ctx, segmentIndex); err != nil {
+		return nil, err
 	}
 	return mix.File(cachePath), nil
 }
