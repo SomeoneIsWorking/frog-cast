@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"math"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -32,7 +35,22 @@ type nowPlaying struct {
 	playPause *widget.Button
 	mute      *widget.Button
 	volume    *widget.Slider
+	level     *widget.Label
+	// volumeSetAt is when the volume was last changed here; polls don't
+	// overwrite it while the TV catches up.
+	volumeSetAt time.Time
+	// One volume request runs at a time; taps meanwhile collapse into the
+	// newest value, so the TV ends where the last tap left it.
+	volumeMu      sync.Mutex
+	volumeBusy    bool
+	volumePending *float64
+	tracks      *playingTracks
+	resume      *widget.Label
+	resumeCard  fyne.CanvasObject
 }
+
+// volumeStep is one notch of the TV's 0–100 volume.
+const volumeStep = 0.01
 
 func newNowPlaying(s *session) *nowPlaying {
 	p := &nowPlaying{s: s}
@@ -73,8 +91,19 @@ func newNowPlaying(s *session) *nowPlaying {
 	)
 
 	p.volume = widget.NewSlider(0, 1)
-	p.volume.Step = 0.01
-	p.volume.OnChangeEnded = func(v float64) { p.control("volume", v) }
+	p.volume.Step = volumeStep
+	p.volume.OnChanged = func(v float64) {
+		p.volumeSetAt = time.Now()
+		p.level.SetText(volumeText(v))
+	}
+	p.volume.OnChangeEnded = p.sendVolume
+	p.level = widget.NewLabel("")
+	p.level.Alignment = fyne.TextAlignCenter
+	quieter := widget.NewButtonWithIcon("", theme.ContentRemoveIcon(), func() { p.stepVolume(-1) })
+	louder := widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() { p.stepVolume(1) })
+	quieter.Importance = widget.LowImportance
+	louder.Importance = widget.LowImportance
+	steps := container.NewHBox(quieter, container.NewGridWrap(fyne.NewSize(36, 36), container.NewCenter(p.level)), louder)
 	p.mute = widget.NewButtonWithIcon("", theme.VolumeUpIcon(), p.toggleMute)
 	p.mute.Importance = widget.LowImportance
 
@@ -88,6 +117,7 @@ func newNowPlaying(s *session) *nowPlaying {
 			s.showTracksSheet(p.state)
 		}
 	})
+	recast := widget.NewButtonWithIcon("Recast", theme.ViewRefreshIcon(), p.recast)
 	stop := widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), func() { p.control("stop", 0) })
 	stop.Importance = widget.DangerImportance
 
@@ -100,15 +130,25 @@ func newNowPlaying(s *session) *nowPlaying {
 		container.New(layout.NewCustomPaddedVBoxLayout(-12), p.position, container.NewBorder(nil, nil, p.elapsed, p.remaining)),
 		transport,
 	))
+	p.tracks = newPlayingTracks(s, func() bool { return p.stopPoll != nil })
 	p.active = container.NewVBox(
 		player,
-		card(container.NewBorder(nil, nil, p.mute, nil, p.volume)),
-		container.NewGridWithColumns(2, subtitles, tracks),
+		card(container.NewBorder(nil, nil, p.mute, steps, p.volume)),
+		p.tracks.content,
+		container.NewGridWithColumns(3, subtitles, tracks, recast),
 		stop,
 	)
-	p.idle = emptyState(theme.MediaVideoIcon(), "Nothing is playing", "Pick an episode or cast a web page.")
+	// The TV ends the session when it sleeps; the last cast can be loaded again.
+	p.resume = caption("")
+	again := widget.NewButtonWithIcon("Recast", theme.ViewRefreshIcon(), p.recast)
+	again.Importance = widget.HighImportance
+	p.resumeCard = card(container.NewVBox(p.resume, layout.NewSpacer(), again))
+	p.idle = container.NewVBox(
+		emptyState(theme.MediaVideoIcon(), "Nothing is playing", "Pick an episode or cast a web page."),
+		p.resumeCard,
+	)
 	p.active.Hide()
-	p.content = container.NewStack(p.idle, container.NewVScroll(p.active))
+	p.content = container.NewStack(container.NewVScroll(p.idle), container.NewVScroll(p.active))
 	return p
 }
 
@@ -124,6 +164,7 @@ func (p *nowPlaying) setPolling(on bool) {
 	if p.stopPoll != nil {
 		return
 	}
+	p.tracks.resumeFollowing()
 	stop := make(chan struct{})
 	p.stopPoll = stop
 	go func() {
@@ -147,6 +188,13 @@ func (p *nowPlaying) show(st *castapi.PlaybackState) {
 	if st.Status == "STOPPED" {
 		p.active.Hide()
 		p.idle.Show()
+		resumable := st.MediaPath != "" && st.DeviceURL != "" && st.Selection != nil
+		p.resume.SetText(fmt.Sprintf("Last cast: %s on %s at %s.", st.MediaName, p.s.targets.name(st.DeviceURL), fmtSec(st.CurrentTime)))
+		if resumable {
+			p.resumeCard.Show()
+		} else {
+			p.resumeCard.Hide()
+		}
 		return
 	}
 	p.idle.Hide()
@@ -181,8 +229,60 @@ func (p *nowPlaying) show(st *castapi.PlaybackState) {
 	} else {
 		p.mute.SetIcon(theme.VolumeUpIcon())
 	}
-	p.volume.Value = st.Volume
+	if time.Since(p.volumeSetAt) > 3*time.Second {
+		p.volume.Value = st.Volume
+		p.volume.Refresh()
+		p.level.SetText(volumeText(st.Volume))
+	}
+	p.tracks.show(st)
+}
+
+// stepVolume moves the volume by notches of the TV's 0–100 scale, for fine
+// changes the slider is too coarse for in portrait.
+func (p *nowPlaying) stepVolume(notches int) {
+	v := math.Round(p.volume.Value/volumeStep) + float64(notches)
+	v = min(max(v, 0), 1/volumeStep) * volumeStep
+	p.volumeSetAt = time.Now()
+	p.volume.Value = v
 	p.volume.Refresh()
+	p.level.SetText(volumeText(v))
+	p.sendVolume(v)
+}
+
+func (p *nowPlaying) sendVolume(v float64) {
+	p.volumeMu.Lock()
+	if p.volumeBusy {
+		p.volumePending = &v
+		p.volumeMu.Unlock()
+		return
+	}
+	p.volumeBusy = true
+	p.volumeMu.Unlock()
+	go func() {
+		for {
+			if _, err := p.s.client.Control("volume", v); err != nil {
+				fyne.Do(func() { p.s.ui.fail(err) })
+			}
+			p.volumeMu.Lock()
+			if p.volumePending == nil {
+				p.volumeBusy = false
+				p.volumeMu.Unlock()
+				return
+			}
+			v = *p.volumePending
+			p.volumePending = nil
+			p.volumeMu.Unlock()
+		}
+	}()
+}
+
+func volumeText(v float64) string {
+	return fmt.Sprintf("%d", int(math.Round(v/volumeStep)))
+}
+
+// recast loads the last cast on its TV again where it was.
+func (p *nowPlaying) recast() {
+	p.control("recast", 0)
 }
 
 func (p *nowPlaying) togglePause() {

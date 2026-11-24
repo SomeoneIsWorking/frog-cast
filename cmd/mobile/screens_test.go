@@ -17,6 +17,7 @@ import (
 var (
 	shots = flag.String("shots", "", "directory to write screen captures to")
 	base  = flag.String("base", "", "instance to render against, e.g. http://127.0.0.1:9999 (read-only calls only)")
+	page  = flag.String("page", "", "a web page the instance has extracted, for RenderPlaying")
 )
 
 // TestRenderScreens captures each screen against a live instance, for
@@ -107,5 +108,52 @@ func TestRenderScreens(t *testing.T) {
 func closeOverlays(w fyne.Window) {
 	for w.Canvas().Overlays().Top() != nil {
 		w.Canvas().Overlays().Remove(w.Canvas().Overlays().Top())
+	}
+}
+
+// TestRenderPlaying captures the Playing tab for a web page the instance has
+// extracted, playing and then after the TV ended the session:
+//
+//	go test ./cmd/mobile -run RenderPlaying -args -shots DIR -base URL -page PAGE
+func TestRenderPlaying(t *testing.T) {
+	if *shots == "" || *base == "" || *page == "" {
+		t.Skip("pass -shots, -base and -page to render")
+	}
+	a := test.NewTempApp(t)
+	a.Settings().SetTheme(frogTheme{})
+	w := test.NewWindow(nil)
+	w.Resize(fyne.NewSize(390, 844))
+	u := &ui{fyneApp: a, window: w}
+	u.openSession("fedora", castapi.New(*base, ""))
+	s := u.session
+	s.showPlaying()
+	s.playing.setPolling(false)
+	// Showing a state stands in for the poll; the tracks and downloads are read live.
+	s.playing.stopPoll = make(chan struct{})
+	state := castapi.PlaybackState{Status: "PAUSED", MediaPath: *page, MediaName: "Whiplash", DeviceURL: "192.168.1.101",
+		CurrentTime: 3000, Duration: 6405, Volume: 0.07,
+		Selection: &castapi.CastSelection{VideoTrack: 0, AudioTrack: 1, Quality: "5M", SubtitlePath: "none"}}
+	s.playing.show(&state)
+	time.Sleep(3 * time.Second)
+	s.playing.show(&state)
+	snap(t, w, "playing-active")
+	state.Status = "STOPPED"
+	s.playing.show(&state)
+	snap(t, w, "playing-tv-slept")
+	close(s.playing.stopPoll)
+	s.playing.stopPoll = nil
+	u.closeSession()
+}
+
+func snap(t *testing.T, w fyne.Window, name string) {
+	t.Helper()
+	time.Sleep(time.Second)
+	f, err := os.Create(filepath.Join(*shots, name+".png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := png.Encode(f, w.Canvas().Capture()); err != nil {
+		t.Fatal(err)
 	}
 }

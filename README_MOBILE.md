@@ -64,10 +64,16 @@ The launcher icon is the desktop app's (`build/appicon.png`).
   cancels. This needs Android 8 and a WebView with document-start scripts
   (any current one).
 - **Playing**: the running cast, polled every second while on screen: seek,
-  ±10/30 s, pause, volume and mute, stop. **Subtitles** adjusts timing, size
-  and style live; **Tracks** switches video, quality, audio and subtitle
-  source (the TV reloads at the same spot). Opens here when something is
-  already playing.
+  ±10/30 s, pause, volume (slider, and − / + one notch of the TV's 0–100) and
+  mute, stop. It names the video, quality, audio and subtitles playing and,
+  for a web page, shows its video and audio downloads into the instance.
+  **Subtitles** adjusts timing, size and style live; **Tracks** switches
+  video, quality, audio and subtitle source (the TV reloads at the same
+  spot); **Recast** loads the cast on the TV again where it was, for a TV
+  that dropped the session asleep after a long pause (also offered once the
+  cast reads as stopped). Opens here when something is already playing.
+  Render it against an instance with
+  `go test ./cmd/mobile -run RenderPlaying -args -shots DIR -base URL -page PAGE`.
 - **Downloads**: the instance's torrents (add a magnet link) and its web page
   track downloads, with progress; a page track can be stopped or resumed.
 - **Manage**: the instance's media cache size, clearing transcoded
