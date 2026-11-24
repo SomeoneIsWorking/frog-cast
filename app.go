@@ -1214,6 +1214,9 @@ func (a *App) handleChromecastMessage(from castReceiver, msg *cast_proto.CastMes
 
 	case "CLOSE", "LOAD_FAILED":
 		a.mu.Lock()
+		// The device stops reporting, so keep where playback had got to for a recast.
+		a.playbackState.CurrentTime = a.extrapolatedPosition()
+		a.positionAt = time.Now()
 		a.playbackState.Status = "STOPPED"
 		a.mu.Unlock()
 	}

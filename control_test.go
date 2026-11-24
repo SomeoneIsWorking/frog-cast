@@ -40,6 +40,19 @@ func TestRecastAfterTheTVClosedTheSession(t *testing.T) {
 	}
 }
 
+func TestRecastAfterTheTVClosedTheSessionWhilePlaying(t *testing.T) {
+	a, fake := playingApp(t, "PLAYING", 1000, 10*time.Minute, options.StreamOptions{
+		Subtitle: options.SubtitleCastOptions{Path: "none"},
+	})
+	a.handleChromecastMessage(a.App, castMessage(`{"type":"CLOSE"}`))
+	if _, err := a.Recast(); err != nil {
+		t.Fatal(err)
+	}
+	if load := fake.loads[0]; load.StartTime < 1599 || load.StartTime > 1601 {
+		t.Fatalf("StartTime = %d, want about 1600", load.StartTime)
+	}
+}
+
 func TestRecastNeedsAPreviousCast(t *testing.T) {
 	a, _ := newTestApp(t)
 	if _, err := a.Recast(); err == nil {
